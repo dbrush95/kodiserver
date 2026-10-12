@@ -1,21 +1,21 @@
 # Kodi Server
-A lightweight home-media management portal for **Raspberry Pi OS Lite (64-bit)**, built as a Cockpit application.
+A home media control portal for **Raspberry Pi OS Lite 64-bit**, plus a Kodi companion for shared setup.
 
-## Included
-- Pi login and HTTPS through Cockpit.
-- Overview with real hostname, uptime, memory, available disk space, and recovery-copy count.
-- **Integrated interactive terminal**, running as the signed-in Pi user.
-- **Existing Plex server connection**: save its address, check port reachability from the Pi, and open Plex Web for full library management. Plex Web opens in its own tab, not an unreliable cross-origin iframe.
-- Kodi Backup import from a mounted USB folder or ZIP; original files remain unchanged.
-- Dated, separately labeled recovery copies plus complete Shield backup and client-restore instructions inside the portal.
-- Responsive interface with keyboard navigation and accessible form labels.
+## What runs where
+| Pi server | Each Kodi device |
+|---|---|
+| Cockpit portal and authenticated terminal | Local playback, remote/audio settings |
+| Tvheadend: supported IPTV, EPG, DVR | Tvheadend HTSP Client |
+| Private backups and authenticated SMB shares | Kodi Backup and device-specific restore |
+| Shared skin/weather profile and repository ZIP packages | Companion applies profile and schedules repository checks |
+| Optional MariaDB native media library | One designated client scans network media |
+| Published setup configuration | Streaming-service add-ons, logins and DRM playback |
 
-No Docker, Node runtime, database, Plex token, or always-running custom backend is needed on the Pi. The helper uses Python's standard library and runs on demand through your authenticated Cockpit session.
+This is not a remote host for SlyGuy subscription add-ons. IPTV Merge playlists must be inspected: plugin URLs, Kodi-specific properties and local proxy URLs cannot simply move into Tvheadend. The portal has a local playlist inspection tool. Even direct HTTP candidates need playback and authorization checks.
 
-## Install on the Pi
-Start with Raspberry Pi OS Lite **64-bit**, enable SSH in Raspberry Pi Imager, and connect Ethernet if possible.
+**Plex setup is deferred.** Its portal section is a placeholder; no Plex installation or connection is required.
 
-While this change is under review, use its branch explicitly:
+## Install the portal
 ```bash
 sudo apt update
 sudo apt install -y git
@@ -23,47 +23,79 @@ git clone --branch codex/pi-portal https://github.com/dbrush95/kodiserver.git
 cd kodiserver
 bash install.sh
 ```
+Run as your regular Pi account. The installer uses sudo for system packages, installs Cockpit, builds the companion ZIP and initializes private profile storage. Open **https://YOUR-PI:9090**, sign in with your Pi account, and choose **Media server**. Verify the address before accepting Cockpit’s local certificate.
 
-The installer asks for sudo to install Cockpit and the portal files. Run it as your normal Pi user, not root. It does not install Plex or alter its existing server, format disks, or restore a Kodi backup.
-
-Open **https://media-pi.local:9090** (substitute your hostname or local IP). Sign in with your Pi username/password, then select **Media server**. Cockpit initially uses a locally generated certificate, so a browser certificate warning is expected; verify that you are visiting your own Pi.
-
-Use a strong Pi account password and keep port 9090 on your home network. No router port forwarding is required. Cockpit's terminal intentionally grants the same access as logging in to that Pi account.
-
-## Plex connection
-Open Plex in the portal and enter an address such as `http://192.168.1.50:32400`. Save, check the connection, and open Plex Web. Use Plex's own sign-in. The connection check only tests the TCP port; it does not claim to authenticate Plex or enumerate libraries.
-
-## Shield backup
-1. Plug a removable USB into the Shield.
-2. Kodi → Settings → Add-ons → Install from repository → Kodi Add-on repository → Program add-ons → **Backup by robweber**.
-3. Backup → Settings → Remote Directories → Browse Path. Choose a dedicated `KodiBackups` folder on the USB.
-4. Enable **User Addons, Addon Data, Config Files, Database, Playlist, Profiles** if used, and **Thumbnails/Fanart**.
-5. Leave compression off initially, run Backup, and wait for completion.
-6. Open Restore to confirm a new dated entry exists, then cancel. Record the Kodi major version.
-7. Keep a second copy on your computer.
-
-A listed backup is not proof of a successful restore. Test on a spare compatible client before relying on it.
-
-## Import to the Pi
-Safely eject the USB, connect it to the Pi, and mount it. OS Lite may not mount drives automatically. Use `lsblk -f` in the terminal to identify the correct partition. Do not format it. If already mounted, use the displayed mount path. If not, mount the identified partition at a dedicated directory; filesystem permissions must allow your Pi user to read it.
-
-In **Kodi backups**, enter the absolute path to **one dated backup folder** containing `xbmcbackup.val`, or a Kodi Backup ZIP, and add a label. The portal copies it into:
-```text
-~/.local/share/kodiserver/backups/<import-id>/<original-backup-name>
+Then enable server components as needed:
+```bash
+bash setup-server.sh shares
+bash setup-server.sh tv
+bash setup-server.sh library
 ```
-The original name and internal structure are preserved for Kodi Backup to recognize. ZIPs are copied without extraction; imports are not archive-integrity or playback validation. Links and special files in folder backups are rejected. Do not modify the source while copying.
+The shares installer prompts for a Samba password. The TV installer uses [Tvheadend’s documented repository](https://docs.tvheadend.org/documentation/installation/linux), then its package installer; enter an administrator account when prompted. If no account was requested, run `sudo dpkg-reconfigure tvheadend`. Confirm package availability for your Pi OS before relying on the TV install.
 
-Backups and settings are private to the signed-in Pi account. Neither belongs in this public repository. This release imports from Pi-accessible paths; it does not include browser uploads, downloads, an SMB server, or automatic client rollout.
+The optional library installer prompts for your Pi hostname/IP and client subnet. It creates a narrowly scoped MariaDB user for Kodi’s versioned MyVideos/MyMusic databases and places credentials in the authenticated read-only client share. It does not scan or import existing libraries by itself. Do not forward ports 9090, 9981, 9982, 445 or 3306 from the router.
 
-## Restore / update another Kodi device
-Copy the dated backup folder or ZIP shown in the portal to a destination accessible to the target device (USB or an existing authenticated network share). In its Backup add-on, set the destination to that **parent folder**, choose Restore, then select the dated entry.
+## Shared storage
+All data stays outside Git, under `~/.local/share/kodiserver`, private to the Pi user.
 
-A full restore is safest on the original Shield and same Kodi major version. For another Android device, select compatible settings, reinstall native add-ons for that device, and check login, video, audio, skin widgets, and remote behavior. Never restore the Android installation wholesale onto Linux or tvOS.
+| SMB share | Use |
+|---|---|
+| KodiBackups | Writable inbox for dated backups, preferably in a separate folder for each source device |
+| KodiRecovery | Read-only imported recovery copies |
+| KodiClients | Read-only profile.json, companion ZIP, repository ZIPs and optional library.xml |
 
-For updates: create a fresh backup on the source device, import a labeled recovery copy, test selected settings on one spare client, and then repeat on other clients. This portal does not automatically overwrite their settings.
+In Kodi File Manager add a network location: SMB, Pi address, share name, Samba username/password. Kodi stores the credentials locally. Use a stable Ethernet address or DHCP reservation.
 
-## Live TV scope
-This first release is the management foundation. **Tvheadend and channel sources are not installed or configured yet.** Kodi subscription add-ons do not become shared server streams through this portal. Your own Plex media remains on your existing Plex server.
+## New device setup
+1. Install the same Kodi major version as the server profile.
+2. Add the Pi SMB location, then install `service.kodiserver.client-0.2.0.zip` from **KodiClients** using Install from zip.
+3. Open **Kodi Server Companion** under Program add-ons. Browse to **KodiClients/profile.json**.
+4. Use its menu to install repository ZIPs packaged from your tested Shield backup, then install the required skin, weather provider and TV client. These are Kodi’s normal install dialogs; installation is not silent.
+5. Apply the shared skin/weather profile. This opts that Kodi user profile into subsequent updates while idle.
+6. Enter the client’s Tvheadend credentials and streaming-service logins. The companion pre-fills the TV host when configured.
+7. Optionally connect the shared native movie/music library and restart Kodi. Add identical network media paths on each device; enable the daily scanning role on only one configured client.
+8. Enable Kodi’s “Install updates automatically” policy if desired. The companion checks enabled repositories; Kodi remains responsible for installing available updates.
+
+Enrollment applies to the active Kodi user profile; enroll additional profiles that should follow the same home layout. Local audio, remote controls and service account data remain separate.
+
+## Same skin and weather everywhere
+In **Devices & profile**, set Kodi version, skin ID, weather provider ID, location, temperature unit, repository interval and TV host. Publish the profile.
+
+Configure the desired skin and weather location on the Shield first, then make an **uncompressed** Kodi Backup and import it to the server. Select that recovery copy and **Capture & publish settings**. This captures settings.xml for the selected skin/weather provider and packages installed repository add-ons.
+
+Location names alone do not resolve provider-specific weather IDs. Use the companion’s weather setup on the source device and select the location there; then capture its resolved settings. Provider API keys and obvious login/token fields are excluded and may need entry on individual devices. Skin helper files, local artwork paths and add-on widgets may need separate migration; this is a settings template, not a guaranteed complete clone of every skin. Test a spare client before enrolling all devices.
+
+## Scheduler and loading times
+The companion waits **2–5 minutes after Kodi starts**, checks the shared profile every 15 minutes, and does repo work only while not playing. Repository check intervals are configurable from 6 to 168 hours (default 24). Offline clients catch up when they are online. It calls Kodi’s documented UpdateAddonRepos; Kodi’s own update policy and independent built-in checks still apply.
+
+Repository ZIPs captured from backups are bootstrap copies. After they are installed, the clients use those repositories’ original upstream URLs to discover current add-ons. The Pi is not a complete upstream package mirror.
+
+Tvheadend should fetch/maintain guide data on its own schedule once grabbers are configured. MariaDB holds native library metadata and watched status, but Kodi still performs media scans and artwork caching. One companion can request daily video-library scans while idle. Streaming add-on catalogs, authentication and skin-widget requests are not moved into MariaDB. Keep thumbnail caches local, reduce startup widgets, disable unused services, and measure cold-start times before/after.
+
+## IPTV and DVR
+Run the TV installer, then open **IPTV & DVR → Open TV management**. In Tvheadend:
+- Add a backend-compatible source using an IPTV Automatic Network; set the provider’s concurrent stream limit.
+- Scan/map channels, configure an XMLTV guide grabber and its update schedule.
+- Select DVR storage, preferably an external mounted drive writable by the Tvheadend service account.
+- Create non-admin streaming/DVR accounts for Kodi clients.
+- In Kodi’s Tvheadend HTSP Client use Pi host, HTTP 9981, HTSP 9982 and that client’s credentials.
+
+Test live TV, EPG updates and a scheduled recording before removing duplicate IPTV Simple channels. This code installs the backend; it cannot supply your channel sources, provider accounts or guide configuration.
+
+## Shield backup directly to the server
+1. Install **Backup by robweber** from Kodi’s official repository → Program add-ons.
+2. Add an authenticated SMB network location for **KodiBackups**, create a dedicated **Shield** subfolder, and choose it in Backup → Settings → Remote Directories.
+3. Include User Addons, Addon Data, Config Files, Database, Playlist, Profiles if used, and Thumbnails/Fanart. Leave compression off to support skin/profile capture.
+4. Run Backup and verify a dated restore entry appears (cancel without restoring).
+5. In the portal import that dated folder from `~/.local/share/kodiserver/inbox/Shield/<date>`, using its full absolute path.
+6. Keep another copy off the Pi. Set Backup’s own schedule for periodic Shield backups.
+
+Do not point the Backup add-on at an entire mixed-use share; it manages retention inside its selected destination.
+
+## Restore and update clients
+A full restore is safest on the original Shield using the same Kodi major version. In another Android client, choose compatible settings and reinstall native components as needed. Never restore the Android userdata tree wholesale onto Linux/tvOS.
+
+For a recovery restore, the portal displays the original dated backup path. Browse KodiRecovery to that import’s parent folder and set it as Backup’s destination, then select the dated entry. Keep recovery and shared-profile publication separate: publishing a skin does not restore databases or overwrite streaming accounts.
 
 ## Update portal
 ```bash
@@ -71,18 +103,9 @@ cd kodiserver
 git pull --ff-only
 bash install.sh
 ```
-Log out of Cockpit and log in again. The installer preserves user backup data.
+Log out of Cockpit and back in. Existing user data is preserved. Companion updates are installed from its ZIP; a self-updating companion repository is not yet implemented.
 
-## Validation
-```bash
-python3 -m unittest discover -s tests -v
-node --check portal/app.js
-bash -n install.sh
-```
-GitHub Actions additionally checks desktop/mobile browser flows using labeled test fixtures. Those checks do not validate a real Cockpit login, Raspberry Pi installation, terminal session, mounted USB, or Plex playback; test those on the Pi before calling the installation complete.
+## Validation and limitations
+GitHub Actions tests backup/profile handling, syntax, ZIP packaging and desktop/mobile browser flows using fixtures. Real Raspberry Pi packages, Cockpit authentication/terminal, Samba access, Kodi APIs/skin behavior, EPG sources, recording storage and companion enrollment require hardware validation before rollout. No claims of measured startup improvement are made.
 
-## References
-- [Cockpit package development](https://docs.cockpit-project.org/cockpit-guide/main/guide/packages.html)
-- [Cockpit terminal embedding](https://docs.cockpit-project.org/cockpit-guide/main/guide/embedding.html)
-- [Kodi backup guidance](https://kodi.wiki/view/Backup)
-- [Backup add-on settings](https://github.com/robweber/xbmcbackup/wiki/Configuration)
+References: [Kodi backup](https://kodi.wiki/view/Backup), [Kodi built-ins](https://kodi.wiki/view/List_of_built-in_functions), [Tvheadend client](https://kodi.wiki/view/Tvheadend), [shared library](https://kodi.wiki/view/MySQL).

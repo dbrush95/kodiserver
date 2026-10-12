@@ -18,9 +18,10 @@ jobs:
       - name: Validate Python, JavaScript and installer
         run: |
           python -m unittest discover -s tests -v
-          python -m py_compile server/server.py
+          python -m compileall -q server client
+          python server/build_client.py /tmp/kodiserver-client
           node --check portal/app.js
-          bash -n install.sh
+          bash -n install.sh setup-server.sh
           python -m json.tool portal/manifest.json > /dev/null
       - name: Install browser test runtime
         run: |

@@ -86,6 +86,42 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(json.loads(result.stdout)["error"], "Unknown action")
 
+
+    def test_profile_validation_and_revision(self):
+        first = server.save_profile({"weather_location": "Example city", "repo_interval_hours": 12})
+        second = server.save_profile({"temperature_unit": "C"})
+        self.assertEqual(second["weather_location"], "Example city")
+        self.assertNotEqual(first["revision"], second["revision"])
+        for args in ({"skin_id": "skin.x);Exec(foo)"}, {"repo_interval_hours": 0}, {"temperature_unit": "X"}):
+            with self.assertRaises(ValueError):
+                server.save_profile(args)
+
+    def test_capture_filters_secrets_and_packages_repositories(self):
+        addondata = self.source / "userdata/addon_data"
+        (addondata / "skin.fentastic").mkdir(parents=True)
+        (addondata / "skin.fentastic/settings.xml").write_text('<settings><setting id="theme">dark</setting><setting id="api_key">private</setting></settings>')
+        repo = self.source / "addons/repository.example"
+        repo.mkdir(parents=True)
+        (repo / "addon.xml").write_text('<addon id="repository.example" name="Example"><extension point="xbmc.addon.repository"/></addon>')
+        meta = server.import_backup({"path": str(self.source), "label": "Source"})
+        profile = server.capture_profile({"id": meta["id"]})
+        self.assertEqual(profile["skin_settings"], {"theme": "dark"})
+        self.assertEqual(profile["repositories"][0]["id"], "repository.example")
+        self.assertTrue((server.clients_root() / profile["repositories"][0]["zip"]).exists())
+
+    def test_playlist_classification_does_not_return_credentials(self):
+        path = Path(self.tmp.name) / "playlist.m3u8"
+        path.write_text("#EXTM3U\n#EXTINF:-1,Direct\nhttps://example.test/a?token=private\n#EXTINF:-1,Kodi\nplugin://addon/play\n#EXTINF:-1,DRM\n#KODIPROP:inputstream=inputstream.adaptive\nhttps://example.test/b\n#EXTINF:-1,Proxy\nhttp://127.0.0.1:9000/play\n")
+        data = server.analyze_playlist({"path": str(path)})
+        self.assertEqual(data, {"total": 4, "direct_candidates": 1, "kodi_dependent": 3, "other": 0})
+        self.assertNotIn("private", json.dumps(data))
+
+    def test_changing_skin_does_not_reuse_previous_skin_settings(self):
+        initial = server.client_profile()
+        initial["skin_settings"] = {"theme": "dark"}
+        server.write_profile(initial)
+        self.assertEqual(server.save_profile({"skin_id": "skin.estuary"})["skin_settings"], {})
+
     def test_status_returns_real_storage(self):
         self.assertGreater(server.status()["disk_total"], 0)
 

@@ -18,6 +18,8 @@ done
 sudo install -m 755 "$source_dir/server/server.py" /usr/local/lib/kodiserver/server.py
 mkdir -p "$HOME/.local/share/kodiserver/backups"
 chmod 700 "$HOME/.local/share/kodiserver" "$HOME/.local/share/kodiserver/backups"
+python3 "$source_dir/server/build_client.py" "$HOME/.local/share/kodiserver/clients"
+python3 /usr/local/lib/kodiserver/server.py save-profile '{}'
 sudo systemctl enable --now cockpit.socket
 echo
 echo "Installed. Open https://$(hostname).local:9090 and select Media server."

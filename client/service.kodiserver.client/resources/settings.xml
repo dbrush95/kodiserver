@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings><category label="Connection">
+<setting id="profile_path" type="text" label="Server profile path (SMB)" default=""/>
+<setting id="enrolled" type="bool" label="Follow shared skin and weather settings" default="false"/>
+<setting id="repo_schedule" type="bool" label="Follow server repository check schedule" default="true"/>
+<setting id="library_scanner" type="bool" label="Scan shared library daily (enable on one device only)" default="false"/>
+</category></settings>
