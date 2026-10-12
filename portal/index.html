@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kodi Server • Home media</title>
+<link rel="stylesheet" href="style.css?v=8">
+<script src="../base1/cockpit.js"></script>
+<script src="app.js?v=8" defer></script>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+<a class="brand" href="#overview"><span class="brand-icon">K</span><span>Kodi Server<small>YOUR HOME MEDIA</small></span></a>
+<nav aria-label="Portal sections">
+<button data-page="overview" aria-current="page">◫ <span>Overview</span></button>
+<button data-page="backups">▣ <span>Kodi backups</span></button>
+<button data-page="files">▦ <span>Files</span></button>
+<button data-page="tv">▤ <span>IPTV & DVR</span></button>
+<button data-page="clients">⇄ <span>Devices & profile</span></button>
+<button data-page="plex">▷ <span>Plex & movies</span></button>
+<button data-page="terminal">›_ <span>Terminal</span></button>
+<button data-page="guide">☷ <span>Setup guide</span></button>
+</nav>
+<div class="sidebar-foot"><span class="dot"></span> Private home server<br><small>Managed through your Pi account</small></div>
+</aside>
+<main>
+<header><div><span class="eyebrow">HOME / <span id="breadcrumb">OVERVIEW</span></span><h1 id="page-title">Your media, at home.</h1></div><button id="refresh" class="secondary">↻ Refresh</button></header>
+<div id="notice" role="status" aria-live="polite" hidden></div>
+<section id="overview" class="page">
+<div class="hero"><div><span class="eyebrow">ONE PLACE TO MANAGE IT</span><h2>A little server.<br>A home full of entertainment.</h2><p>Manage your shared TV backend, device profile, repositories, and Kodi recovery copies.</p><button data-go="backups">Back up your setup →</button></div><div class="server-art" aria-hidden="true"><div class="server-box"><i></i><i></i><i></i><span>MEDIA PI</span><b>● ● ●</b></div><div class="orbit"></div></div></div>
+<div class="metrics">
+<article><span>SERVER</span><strong id="hostname">Connecting…</strong><small id="uptime">Waiting for the Pi</small></article>
+<article><span>MEMORY IN USE</span><strong id="memory">—</strong><small id="memory-detail">Live system reading</small></article>
+<article><span>BACKUP STORAGE FREE</span><strong id="disk">—</strong><small id="disk-detail">On this Pi</small></article>
+<article><span>RECOVERY COPIES</span><strong id="backup-count">—</strong><small>Stored on this Pi account</small></article>
+</div>
+<div class="section-heading"><h2>Your services</h2><span>Ready when you need them</span></div>
+<div class="cards">
+<article class="service"><span class="service-icon amber">▷</span><span class="tag" id="tv-tag">Checking…</span><h3>IPTV & DVR</h3><p>One channel guide and recording backend for your Kodi clients.</p><button data-go="tv" class="secondary">Manage live TV →</button></article>
+<article class="service"><span class="service-icon mint">▣</span><span class="tag">Recovery</span><h3>Kodi backups</h3><p>Import your Shield backup and keep dated recovery copies.</p><button data-go="backups" class="secondary">Manage backups →</button></article>
+<article class="service"><span class="service-icon blue">▤</span><span class="tag">Pi account</span><h3>Files</h3><p>Browse server files, the Shield USB, recordings, and your home folder.</p><button data-go="files" class="secondary">Open files →</button></article>
+<article class="service"><span class="service-icon blue">›_</span><span class="tag">Pi account</span><h3>Server terminal</h3><p>A real shell on your Raspberry Pi, right here in your browser.</p><button data-go="terminal" class="secondary">Open terminal →</button></article>
+<article class="service"><span class="service-icon mint">▷</span><span class="tag">Big PC</span><h3>Plex & movies</h3><p>Claim Plex, add your movie folders, and send the free live lineup to the Plex app.</p><button data-go="plex" class="secondary">Open the media page →</button></article>
+</div>
+<div class="note"><strong>One shared profile.</strong> Publish a tested skin, weather preferences, and repository schedule under Devices & profile. New devices use the companion add-on to follow it.</div>
+</section>
+<section id="backups" class="page" hidden>
+<p class="intro">Keep the original Shield setup safe before adapting it for other devices.</p>
+<div class="split">
+<article class="panel"><h2>Import a recovery backup</h2><p>On the Shield, add <code>smb://192.168.1.119/KodiBackups</code> and point Backup’s remote directory there. A finished dated folder is copied into the recovery library on its own. A USB stick mounted at <code>/mnt/shield-usb</code> is scanned the same way. You can also import a path below.</p>
+<form id="import-form"><label for="backup-path">Backup path on the Pi</label><input id="backup-path" placeholder="/home/dallas/.local/share/kodiserver/inbox/202610120100" required>
+<label for="backup-label">Label</label><input id="backup-label" placeholder="Living room Shield · Kodi 21" maxlength="100" required>
+<button type="submit">Import backup</button></form><p class="hint">Imports copy the files. Your USB original is preserved. ZIP archives are stored without extraction.</p></article>
+<article class="panel"><span class="eyebrow">BEFORE YOU IMPORT</span><h2>Save the whole setup.</h2><ol><li>Install <strong>Backup by robweber</strong> from Kodi’s official repository.</li><li>Add the SMB source <strong>KodiBackups</strong> on <strong>192.168.1.119</strong>, user <strong>dallas</strong>, and choose it as the remote directory.</li><li>Include User Addons, Addon Data, Config Files, Database, Playlist, Profiles, and Thumbnails/Fanart. Leave compression off.</li><li>Run Backup. This Pi copies the dated folder into the recovery library after it finishes writing.</li></ol><button data-go="guide" class="secondary">Full backup & restore guide →</button></article>
+</div>
+<div class="section-heading"><h2>Recovery library</h2><span id="backup-location"></span></div>
+<div id="attached-list"></div>
+<div id="backup-list" class="backup-list"><p>Loading backups…</p></div>
+<div class="note">Backups may contain account sessions. They stay in your Pi user’s private storage. Importing is not a restore test or an automatic update to other Kodi devices.</div>
+</section>
+<section id="tv" class="page" hidden>
+<div class="split"><article class="panel"><span class="eyebrow">TVHEADEND</span><h2>Channels, guide & recordings</h2><p id="tv-status">Checking service…</p><a id="tv-open" class="button" target="_blank" rel="noopener noreferrer">Open TV management ↗</a><p>Use the Tvheadend administrator account to configure playlists, guide sources and DVR. Give Kodi clients their own streaming/DVR user without administration rights.</p><p class="hint">Installed with <code>bash setup-server.sh tv</code>. Provider authentication is configured in Tvheadend only when that provider supports a backend-compatible stream.</p></article>
+<article class="panel"><h2>One playlist for the house</h2><p id="weather-line">Dayton, OH weather is published from this Pi.</p><p id="playlist-counts">Waiting for the house playlist.</p><p><strong>Apple TV and other IPTV apps</strong><br><code id="apple-url"></code></p><p><strong>Kodi live TV through Tvheadend</strong><br><code id="tvh-url"></code></p><p><strong>Other Kodi devices that still have SlyGuy</strong><br><code id="kodi-url"></code></p><p><strong>Guide</strong><br><code id="epg-url"></code></p><div id="source-list"></div><div id="hosted-repos"></div><p class="hint">The big PC builds this list. Use <code>http://192.168.1.120:8877/playlist.m3u8</code> and <code>http://192.168.1.120:8877/epg.xml</code>. The Pi keeps a copy at the old address so devices already set up keep working. Pluto, Samsung TV Plus, Xumo, Plex, Roku, Tubi, Vizio, Klowd, SOFAST, Fire TV, ABC News, CBS News, public PBS, and the Ohio stations refresh on the big PC about every 3 hours. Disney+, Hulu, ESPN, Paramount+, Philo, and Hulu Live stay in SlyGuy on the Shield. WLMB and WTOV now play from the big PC at <code>192.168.1.120</code>, HTTP 9981 and HTSP 9982, and new recordings go to its backup disk. Devices still pointed at the Pi keep using the Pi until their Tvheadend host is changed.</p><form id="playlist-form"><label for="playlist-path">Inspect a playlist path already on the Pi</label><input id="playlist-path" placeholder="/home/dallas/.local/share/kodiserver/inbox/iptv/playlist.m3u8"><button type="submit">Inspect</button><button type="button" id="publish-playlist">Refresh</button></form><p id="playlist-result" role="status"></p></article></div>
+<div class="panel guide"><h2>Connect once, play everywhere</h2><ol><li>Add compatible M3U sources in Tvheadend → Configuration → DVB Inputs → Networks → IPTV Automatic Network. Set the provider’s maximum concurrent streams.</li><li>Scan/map the working channels and configure an XMLTV guide grabber and its update schedule. A playlist alone does not provide guide data.</li><li>Choose a recording location in Configuration → Recording → Digital Video Recorder Profiles. Prefer a mounted external drive; the Tvheadend service account needs write permission.</li><li>On Kodi, enable Tvheadend HTSP Client. Set the host to 192.168.1.120, HTTP port 9981, HTSP port 9982, and that client’s Tvheadend user/password.</li><li>Test live playback, guide updates and one scheduled recording before disabling duplicate channels from IPTV Simple.</li></ol><div class="note">Direct HTTP entries are candidates, not guaranteed playable sources. Kodi plugin URLs, DRM properties and local proxies still need investigation. Streaming subscription logins are not shared automatically.</div></div>
+<article class="panel" id="duplicates"><h2>Held duplicates</h2><p id="lineup-summary">Loading the lineup…</p><label for="held-filter">Find a channel</label><input id="held-filter" placeholder="Channel name"><div id="held-list"></div><p class="hint">A duplicate is held when another copy of the same channel measured a higher picture size or a higher advertised bitrate. The guide titles are there so you can confirm it is the same station before you add it back. Adding it back puts that copy on the next tuner that has room. Stream addresses stay on the server.</p></article>
+</section>
+<section id="clients" class="page" hidden>
+<div class="split"><article class="panel"><h2>Shared home profile</h2><form id="profile-form">
+<label for="kodi-major">Kodi major version on clients</label><input type="number" id="kodi-major" min="20" max="30" required>
+<label for="skin-id">Skin add-on ID</label><input id="skin-id" required value="skin.fentastic">
+<label for="weather-id">Weather add-on ID</label><input id="weather-id" required value="weather.multi">
+<label for="weather-location">Weather location</label><input id="weather-location" placeholder="City, state or ZIP">
+<label for="temperature-unit">Temperature unit</label><select id="temperature-unit"><option value="F">Fahrenheit</option><option value="C">Celsius</option></select>
+<label for="repo-hours">Check enabled repositories every (hours)</label><input type="number" id="repo-hours" min="6" max="168" required>
+<label for="tvh-host">TV server hostname or IP</label><input id="tvh-host" placeholder="media-pi.local">
+<button type="submit">Publish profile</button></form><p class="hint">Online companions check the profile every 15 minutes and apply changes while not playing. Repo checks wait 2–5 minutes after startup. Kodi’s own automatic-update setting controls installation.</p></article>
+<article class="panel"><span class="eyebrow">SET UP A NEW DEVICE</span><h2>One connection. A familiar home.</h2><ol><li>Install the same Kodi major version.</li><li>Add an SMB network location for the Pi. Use the Samba account created by the installer.</li><li>From <strong>KodiClients</strong>, install <strong>service.kodiserver.client-0.2.0.zip</strong>.</li><li>Open Kodi Server Companion and choose <strong>profile.json</strong> in that share.</li><li>Use its setup menu to install the packaged repositories, then required add-ons, then apply the shared profile.</li><li>Enter the client’s TV and streaming-service logins. Repeat enrollment for each Kodi user profile that should follow the server.</li></ol><p id="clients-location"></p><p id="shared-services"></p><div class="note">“Apply shared profile” opts this device into later skin/weather changes. Local audio, remote controls, service logins and databases are preserved.</div></article></div>
+<div class="panel"><h2>Capture your preferred layout</h2><p>First configure the skin and weather on the Shield. Make an uncompressed Kodi backup, import it here, then capture the selected profile. This packages repository ZIPs and the selected skin/weather settings; it does not mirror all add-on data or credentials.</p><form id="capture-form"><label for="capture-id">Imported recovery copy</label><select id="capture-id" required></select><button type="submit">Capture & publish settings</button></form><p id="profile-summary"></p><div id="repo-list"></div><p class="hint">Skin-specific helper files, local artwork paths and third-party widget dependencies may need separate migration. Test the profile on one client before enrolling the rest.</p></div>
+<div class="panel"><h2>Metadata & faster startup</h2><p>Tvheadend owns the supported channels, EPG and recordings. An optional MariaDB library shares Kodi’s native movie/show metadata and watched status; it does not share streaming add-on catalogs.</p><p>Run <code>bash setup-server.sh library</code> to prepare MariaDB. After installing the companion, use its shared-library setup. Keep all clients on the same Kodi version and media sources reachable at identical network paths.</p><p>Use one companion’s “Scan shared library” option for periodic scans. Configure that client’s media sources first. Kodi still performs the scans; MariaDB stores the results on the Pi. Do not expect the Pi database to scrape your media by itself.</p><p>Keep artwork caches on each client. Reduce startup widgets, disable unused add-on services, and measure startup before/after. Central storage cannot remove local add-on authentication or widget work.</p></div>
+</section>
+<section id="plex" class="page" hidden>
+<p class="intro">Movies live on the big PC. Free live TV stays on the house playlist. Paid apps stay signed in on the Shield.</p>
+<div class="split">
+<article class="panel"><span class="eyebrow">YOUR FILES</span><h2>Plex for movies and shows</h2>
+<p>Plex is installed on the big PC and is waiting to be claimed. Open it from a browser on the home network, sign in with your Plex account, and add the three libraries.</p>
+<p><a class="button" href="http://192.168.1.120:32400/web" target="_blank" rel="noopener noreferrer">Open Plex ↗</a></p>
+<ol>
+<li>Claim the server. This is a one-time sign-in. It does not sign you into Philo or any other TV app.</li>
+<li>Add a Movies library at <code>/mnt/backup/Movies</code>.</li>
+<li>Add a TV library at <code>/mnt/backup/TV</code>.</li>
+<li>Add a Music library at <code>/mnt/backup/Music</code>.</li>
+</ol>
+<p>Copy files from a computer on the home network to <code>\\192.168.1.120\Backup</code>. The iPhone and iPad Plex apps play those libraries. Plex’s own remote access is how your movies leave the house. Leave ports 32400 and 9090 closed on the router.</p>
+</article>
+<article class="panel"><span class="eyebrow">IPHONE LIVE TV</span><h2>The free playlist, inside Plex</h2>
+<p>UHF and other IPTV apps already play the house list. Reload it so Pluto uses the current links.</p>
+<p><code>http://192.168.1.120:8877/playlist.m3u8</code></p>
+<p>Guide: <code>http://192.168.1.120:8877/epg.xml</code></p>
+<p class="hint">Devices already pointed at <code>http://192.168.1.119:8877/playlist.m3u8</code> still receive a copy. New setups should use the big PC address above.</p>
+<p>The Plex app cannot read that playlist by itself. Threadfin on the big PC presents the same free list as an HDHomeRun tuner. After you claim Plex, open Settings → Live TV &amp; DVR → Set Up Plex DVR and enter the tuner by hand.</p>
+<p>Tuner address <code>192.168.1.120</code>, port <code>34400</code>.</p>
+<p><a class="button" href="http://192.168.1.120:34400/web/" target="_blank" rel="noopener noreferrer">Open the tuner setup ↗</a></p>
+<p class="hint">Live TV inside the Plex app needs Plex Pass. Plex accepts at most 480 channels from one tuner, so the active lineup is split across the tuners below. Add each one after you claim the server. Every active free channel is mapped. Held duplicates stay off until you add one back on the TV page.</p>
+<div id="tuner-list"></div>
+</article>
+</div>
+<article class="panel"><h2>Guide and buffering</h2>
+<p>The big PC downloads the free guides and stores one XML file. The Pi copies that file every 30 minutes and serves it to Apple TV, UHF, Kodi, and the tuner. Clients read the stored copy.</p>
+<p>Public PBS streams are in the playlist and have no matching guide source, so those channels appear without programmes. Shield plugin channels stay out of this guide because they only play inside Kodi.</p>
+<p>Movie files sit on the backup disk, and Plex streams them from there. A phone that cannot play a file directly is transcoded on one of the two video cards. Free live TV is passed through. While one Plex client is watching, the tuner holds a few seconds of that stream so a brief hiccup does not freeze the picture. The server does not re-encode the whole channel list, and it does not pull subscription video through itself.</p>
+<div class="note"><strong>Paid logins stay on the Shield.</strong> Disney+, Hulu, ESPN, Paramount+, Philo, and Hulu Live sign in inside SlyGuy. IPTV Merge on the Shield puts Hulu Live and Philo into Kodi Live TV. This server does not take those logins.</div>
+</article>
+</section>
+<section id="files" class="page" hidden>
+<p class="intro">Browse the folders this Pi already uses. Larger copies still belong on the network shares.</p>
+<div class="places" id="file-places"></div>
+<div class="file-toolbar">
+<button type="button" id="file-up" class="secondary" disabled>Up</button>
+<form id="file-folder-form"><input id="file-folder-name" placeholder="New folder name" maxlength="240" aria-label="New folder name"><button type="submit">New folder</button></form>
+<button type="button" id="file-upload-button" class="secondary">Upload</button>
+<input id="file-upload" type="file" hidden>
+</div>
+<p id="file-path" class="file-path"></p>
+<div id="file-list" class="file-list"><p>Loading files…</p></div>
+<p id="file-note" class="hint"></p>
+<pre id="file-preview" hidden></pre>
+<div class="note">Private keys and the library password file stay hidden. Deleting a backup here removes the Pi’s copy. A USB original is left in place. Uploads are limited to 8 MB.</div>
+</section>
+<section id="terminal" class="page" hidden><p class="intro">Signed in as your Pi user. Commands run on the Raspberry Pi.</p><div id="terminal-slot" class="terminal-slot"><p>The terminal loads when this section opens.</p></div></section>
+<section id="guide" class="page" hidden>
+<div class="panel guide">
+<span class="eyebrow">START HERE</span><h2>Shield backup → Pi → another Kodi device</h2>
+<h3>1. Create the Shield backup</h3><p>In Kodi: Settings → Add-ons → Install from repository → Kodi Add-on repository → Program add-ons → Backup. Install the add-on by robweber.</p><p>In Kodi’s file manager, add <code>smb://dallas@192.168.1.119/KodiBackups</code>. Use the Pi passphrase as the Samba password. In Backup → Remote Directories, choose that source. In File Selection, enable User Addons, Addon Data, Config Files, Database, Playlist, Profiles (if used), and Thumbnails/Fanart. Leave compression off for the first backup.</p><p>Run Backup. When it completes, open Restore only to verify that a newly dated backup appears; cancel without restoring.</p>
+<h3>2. Store the backup on the Pi</h3><p>The dated folder lands in the KodiBackups share, or on a USB stick mounted at <code>/mnt/shield-usb</code>. After it stops changing, this Pi copies it into the recovery library. Keep a second copy on your computer.</p>
+<h3>3. Prepare a compatible client</h3><p>Install the same Kodi major version and Backup add-on on the target device. Copy the stored backup’s dated folder/ZIP into a dedicated backup destination accessible to that device, preserving its contents and filename. Point Backup at the parent folder, select Restore, and choose the restore point.</p><p>A full restore is best used on the original Shield. For Firesticks, check Android and processor compatibility; native add-ons may need reinstalling. Start with selected settings, then verify playback, skin widgets, audio, and remote controls. Some services require signing in again.</p>
+<h3>4. Distribute changes deliberately</h3><p>Make a fresh backup after changing your main Kodi setup. Import it with a clear version label, test it on one spare client, and only then restore the compatible selections to other devices. Do not replace each device’s complete settings automatically.</p><div class="note">The Pi stores your Android backups; it does not run those backups as its own Kodi installation. Linux, Android, and tvOS setups are not interchangeable.</div>
+<h3>Server access</h3><p>Use Cockpit’s system pages for services, logs, storage, and user accounts. Keep this admin portal on your home network; do not forward port 9090 from your router.</p>
+<p><a href="https://kodi.wiki/view/Backup" target="_blank" rel="noopener noreferrer">Kodi backup documentation ↗</a> · <a href="https://github.com/robweber/xbmcbackup/wiki/Configuration" target="_blank" rel="noopener noreferrer">Backup add-on settings ↗</a></p>
+</div></section>
+<footer>KODI SERVER <span>Home media, under your control.</span></footer>
+</main></div>
+</body></html>

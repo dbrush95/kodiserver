@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="service.kodiserver.client" name="Kodi Server Companion" version="0.2.0" provider-name="Kodi Server">
+<requires><import addon="xbmc.python" version="3.0.0"/></requires>
+<extension point="xbmc.service" library="service.py"/>
+<extension point="xbmc.python.script" library="default.py"><provides>executable</provides></extension>
+<extension point="xbmc.addon.metadata"><summary lang="en_GB">Shared home profile and repository checks</summary><description lang="en_GB">Connect to your Pi, apply a shared skin and weather profile, and stagger repository checks while idle. Streaming service logins remain local.</description><platform>all</platform><license>MIT</license></extension>
+</addon>
