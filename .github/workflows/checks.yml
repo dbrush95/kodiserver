@@ -1,0 +1,39 @@
+name: Portal checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate Python, JavaScript and installer
+        run: |
+          python -m unittest discover -s tests -v
+          python -m py_compile server/server.py
+          node --check portal/app.js
+          bash -n install.sh
+          python -m json.tool portal/manifest.json > /dev/null
+      - name: Install browser test runtime
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Browser checks with explicit fixtures
+        run: |
+          python -m http.server 8765 --bind 127.0.0.1 > /tmp/kodiserver-preview.log 2>&1 &
+          for attempt in {1..20}; do curl -fsS http://127.0.0.1:8765/portal/index.html > /dev/null && break || sleep 1; done
+          node tests/browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: portal-browser-screenshots
+          path: test-results/
+          if-no-files-found: ignore

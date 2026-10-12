@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "requires": {
+    "cockpit": "300"
+  },
+  "menu": {
+    "index": {
+      "label": "Media server",
+      "order": 5,
+      "path": "index.html"
+    }
+  }
+}

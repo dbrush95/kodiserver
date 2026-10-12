@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kodi Server • Home media</title>
+<link rel="stylesheet" href="style.css">
+<script src="../base1/cockpit.js"></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+<a class="brand" href="#overview"><span class="brand-icon">K</span><span>Kodi Server<small>YOUR HOME MEDIA</small></span></a>
+<nav aria-label="Portal sections">
+<button data-page="overview" aria-current="page">◫ <span>Overview</span></button>
+<button data-page="backups">▣ <span>Kodi backups</span></button>
+<button data-page="plex">▷ <span>Plex</span></button>
+<button data-page="terminal">›_ <span>Terminal</span></button>
+<button data-page="guide">☷ <span>Setup guide</span></button>
+</nav>
+<div class="sidebar-foot"><span class="dot"></span> Private home server<br><small>Managed through your Pi account</small></div>
+</aside>
+<main>
+<header><div><span class="eyebrow">HOME / <span id="breadcrumb">OVERVIEW</span></span><h1 id="page-title">Your media, at home.</h1></div><button id="refresh" class="secondary">↻ Refresh</button></header>
+<div id="notice" role="status" aria-live="polite" hidden></div>
+<section id="overview" class="page">
+<div class="hero"><div><span class="eyebrow">ONE PLACE TO MANAGE IT</span><h2>A little server.<br>A home full of entertainment.</h2><p>Keep your Kodi setup safe, reach your Plex library, and manage your Raspberry Pi.</p><button data-go="backups">Back up your setup →</button></div><div class="server-art" aria-hidden="true"><div class="server-box"><i></i><i></i><i></i><span>MEDIA PI</span><b>● ● ●</b></div><div class="orbit"></div></div></div>
+<div class="metrics">
+<article><span>SERVER</span><strong id="hostname">Connecting…</strong><small id="uptime">Waiting for the Pi</small></article>
+<article><span>MEMORY IN USE</span><strong id="memory">—</strong><small id="memory-detail">Live system reading</small></article>
+<article><span>BACKUP STORAGE FREE</span><strong id="disk">—</strong><small id="disk-detail">On this Pi</small></article>
+<article><span>RECOVERY COPIES</span><strong id="backup-count">—</strong><small>Stored on this Pi account</small></article>
+</div>
+<div class="section-heading"><h2>Your services</h2><span>Ready when you need them</span></div>
+<div class="cards">
+<article class="service"><span class="service-icon amber">▷</span><span class="tag" id="plex-tag">Not configured</span><h3>Plex Media Server</h3><p>Your existing movies, shows, and server settings.</p><button data-go="plex" class="secondary">Connect to Plex →</button></article>
+<article class="service"><span class="service-icon mint">▣</span><span class="tag">Recovery</span><h3>Kodi backups</h3><p>Import your Shield backup and keep dated recovery copies.</p><button data-go="backups" class="secondary">Manage backups →</button></article>
+<article class="service"><span class="service-icon blue">›_</span><span class="tag">Pi account</span><h3>Server terminal</h3><p>A real shell on your Raspberry Pi, right here in your browser.</p><button data-go="terminal" class="secondary">Open terminal →</button></article>
+</div>
+<div class="note"><strong>Live TV is the next step.</strong> This release prepares the management portal. A TV backend and compatible channel sources are configured separately.</div>
+</section>
+<section id="backups" class="page" hidden>
+<p class="intro">Keep the original Shield setup safe before adapting it for other devices.</p>
+<div class="split">
+<article class="panel"><h2>Import a recovery backup</h2><p>Plug your backup USB into the Pi and mount it first. Enter the path to a dated backup folder or ZIP—not the whole USB drive.</p>
+<form id="import-form"><label for="backup-path">Backup path on the Pi</label><input id="backup-path" placeholder="/media/dallas/USB/KodiBackups/202610120100" required>
+<label for="backup-label">Label</label><input id="backup-label" placeholder="Living room Shield · Kodi 21" maxlength="100" required>
+<button type="submit">Import backup</button></form><p class="hint">Imports copy the files. Your USB original is preserved. ZIP archives are stored without extraction.</p></article>
+<article class="panel"><span class="eyebrow">BEFORE YOU IMPORT</span><h2>Save the whole setup.</h2><ol><li>Install <strong>Backup by robweber</strong> from Kodi’s official repository.</li><li>Choose a dedicated <strong>KodiBackups</strong> folder on your USB.</li><li>Include User Addons, Addon Data, Config Files, Database, Playlist, Profiles, and Thumbnails/Fanart.</li><li>Run Backup; confirm the dated restore point appears.</li></ol><button data-go="guide" class="secondary">Full backup & restore guide →</button></article>
+</div>
+<div class="section-heading"><h2>Recovery library</h2><span id="backup-location"></span></div>
+<div id="backup-list" class="backup-list"><p>Loading backups…</p></div>
+<div class="note">Backups may contain account sessions. They stay in your Pi user’s private storage. Importing is not a restore test or an automatic update to other Kodi devices.</div>
+</section>
+<section id="plex" class="page" hidden>
+<div class="split"><article class="panel"><span class="service-icon amber">▷</span><h2>Your existing Plex server</h2><p>Save its address here. Plex keeps managing your library and sign-in on the device where it already runs.</p>
+<form id="plex-form"><label for="plex-url">Plex server address</label><input type="url" id="plex-url" placeholder="http://192.168.1.50:32400" required><p class="hint">Use the server address, without account tokens or passwords.</p><button type="submit">Save connection</button></form>
+<div class="actions"><a id="plex-open" class="button secondary" target="_blank" rel="noopener noreferrer" hidden>Open Plex Web ↗</a><button id="plex-check" class="secondary" disabled>Check connection</button></div><p id="plex-status" role="status">No server connected yet.</p>
+</article><article class="panel"><span class="eyebrow">HOW THIS CONNECTION WORKS</span><h2>Your library stays put.</h2><p>The portal saves the server address and checks whether its port is reachable from the Pi. Plex Web opens in its own tab for library management and playback.</p><p>No Plex account token is stored here. Reachability does not verify Plex authentication or library access.</p><p>Using a separate tab also works when browsers block embedding Plex inside an HTTPS management portal.</p></article></div>
+</section>
+<section id="terminal" class="page" hidden><p class="intro">Signed in as your Pi user. Commands run on the Raspberry Pi.</p><div id="terminal-slot" class="terminal-slot"><p>The terminal loads when this section opens.</p></div></section>
+<section id="guide" class="page" hidden>
+<div class="panel guide">
+<span class="eyebrow">START HERE</span><h2>Shield backup → Pi → another Kodi device</h2>
+<h3>1. Create the Shield backup</h3><p>In Kodi: Settings → Add-ons → Install from repository → Kodi Add-on repository → Program add-ons → Backup. Install the add-on by robweber.</p><p>Open its settings. In Remote Directories, choose Browse Path and select a dedicated KodiBackups folder on the USB. In File Selection, enable User Addons, Addon Data, Config Files, Database, Playlist, Profiles (if used), and Thumbnails/Fanart. Leave compression off for the first backup to avoid extra internal storage use.</p><p>Run Backup. When it completes, open Restore only to verify that a newly dated backup appears; cancel without restoring. Record the Kodi version from System information.</p>
+<h3>2. Store the backup on the Pi</h3><p>Safely eject the USB from the Shield, connect it to the Pi, and mount it. The portal’s terminal can show connected drives using <code>lsblk -f</code>. Raspberry Pi OS Lite may not mount a USB automatically. Mount the correct partition before importing; the path must be readable by your Pi user.</p><p>In Kodi backups, import one dated folder or ZIP. The recovery library shows its permanent path. Keep a second copy on your computer.</p>
+<h3>3. Prepare a compatible client</h3><p>Install the same Kodi major version and Backup add-on on the target device. Copy the stored backup’s dated folder/ZIP into a dedicated backup destination accessible to that device, preserving its contents and filename. Point Backup at the parent folder, select Restore, and choose the restore point.</p><p>A full restore is best used on the original Shield. For Firesticks, check Android and processor compatibility; native add-ons may need reinstalling. Start with selected settings, then verify playback, skin widgets, audio, and remote controls. Some services require signing in again.</p>
+<h3>4. Distribute changes deliberately</h3><p>Make a fresh backup after changing your main Kodi setup. Import it with a clear version label, test it on one spare client, and only then restore the compatible selections to other devices. Do not replace each device’s complete settings automatically.</p><div class="note">The Pi stores your Android backups; it does not run those backups as its own Kodi installation. Linux, Android, and tvOS setups are not interchangeable.</div>
+<h3>Server access</h3><p>Use Cockpit’s system pages for services, logs, storage, and user accounts. Keep this admin portal on your home network; do not forward port 9090 from your router.</p>
+<p><a href="https://kodi.wiki/view/Backup" target="_blank" rel="noopener noreferrer">Kodi backup documentation ↗</a> · <a href="https://github.com/robweber/xbmcbackup/wiki/Configuration" target="_blank" rel="noopener noreferrer">Backup add-on settings ↗</a></p>
+</div></section>
+<footer>KODI SERVER <span>Home media, under your control.</span></footer>
+</main></div>
+</body></html>
