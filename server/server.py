@@ -430,9 +430,17 @@ def iter_backup_folders():
                 dirnames.clear()
 
 def attached_backups():
+    ledger_path = root() / "backup-ledger.json"
+    seen = set(json.loads(ledger_path.read_text())) if ledger_path.is_file() else set()
     items = []
     for folder in iter_backup_folders():
         if folder.is_relative_to(root()):
+            continue
+        try:
+            key = str(folder.resolve())
+        except OSError:
+            continue
+        if key in seen or folder.name in seen:
             continue
         items.append({"path": str(folder), "name": folder.name})
     return items
