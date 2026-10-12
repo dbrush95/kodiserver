@@ -193,7 +193,8 @@ def main():
         print(json.dumps(handlers[action]()))
     except Exception as error:
         print(json.dumps({"error": str(error)}))
-        return 1
+        # Operational errors are structured responses for the portal.
+        return 0
     return 0
 
 if __name__ == "__main__":

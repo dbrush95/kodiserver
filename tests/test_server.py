@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -78,6 +80,11 @@ class ServerTests(unittest.TestCase):
                     "http://host/#secret", "file:///etc/passwd", "http://host:99999", "http://host/other"]:
             with self.subTest(url=url), self.assertRaises(ValueError):
                 server.normalize_url(url)
+
+    def test_cli_error_is_readable_json(self):
+        result = subprocess.run([sys.executable, str(Path(server.__file__)), "unknown"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["error"], "Unknown action")
 
     def test_status_returns_real_storage(self):
         self.assertGreater(server.status()["disk_total"], 0)
