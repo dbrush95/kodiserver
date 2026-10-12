@@ -116,6 +116,21 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(data, {"total": 4, "direct_candidates": 1, "kodi_dependent": 3, "other": 0})
         self.assertNotIn("private", json.dumps(data))
 
+    def test_publish_hosts_direct_streams_and_hides_plugin_urls_from_status(self):
+        folder = Path(self.tmp.name) / "merge"
+        folder.mkdir()
+        (folder / "playlist.m3u8").write_text("#EXTM3U\n#EXTINF:-1,Direct\nhttps://example.test/a?token=private\n#EXTINF:-1,Kodi\nplugin://addon/play\n")
+        (folder / "epg.xml").write_text("<tv></tv>")
+        result = server.publish_playlist({"path": str(folder / "playlist.m3u8")})
+        apple = (server.public_root() / "playlist.m3u8").read_text()
+        self.assertIn("https://example.test/a?token=private", apple)
+        self.assertNotIn("plugin://", apple)
+        self.assertIn('url-tvg="', apple)
+        self.assertEqual((server.public_root() / "epg.xml").read_text(), "<tv></tv>")
+        self.assertEqual(result["direct_candidates"], 1)
+        self.assertNotIn("private", json.dumps(result))
+        self.assertTrue(result["apple_playlist"].endswith("/playlist.m3u8"))
+
     def test_changing_skin_does_not_reuse_previous_skin_settings(self):
         initial = server.client_profile()
         initial["skin_settings"] = {"theme": "dark"}

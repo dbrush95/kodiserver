@@ -19,7 +19,7 @@ def main():
     if not re.fullmatch(r"[a-z_][a-z0-9_-]*", account) or not re.fullmatch(r"/[a-zA-Z0-9_./-]+", home):
         raise SystemExit("Unsupported account/home path")
     root = Path.home() / ".local/share/kodiserver"
-    for name in ("inbox", "backups", "clients"):
+    for name in ("inbox", "inbox/iptv", "backups", "clients"):
         (root / name).mkdir(parents=True, exist_ok=True, mode=0o700)
     config = Path("/etc/samba/smb.conf")
     include = Path("/etc/samba/kodiserver.conf")
@@ -32,7 +32,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         draft = Path(tmp) / "kodiserver.conf"
         sections = []
-        for label, folder, readonly in (("KodiBackups", "inbox", "no"), ("KodiRecovery", "backups", "yes"), ("KodiClients", "clients", "yes")):
+        for label, folder, readonly in (("KodiBackups", "inbox", "no"), ("KodiPlaylists", "inbox/iptv", "no"), ("KodiRecovery", "backups", "yes"), ("KodiClients", "clients", "yes")):
             sections.append(f"[{label}]\npath = {root / folder}\nvalid users = {account}\nguest ok = no\nread only = {readonly}\nbrowseable = yes\ncreate mask = 0600\ndirectory mask = 0700\n")
         draft.write_text("\n".join(sections))
         run("sudo", "cp", "-n", str(config), "/etc/samba/smb.conf.before-kodiserver")
@@ -68,7 +68,7 @@ def main():
         run("sudo", "smbpasswd", "-a", account)
     run("sudo", "systemctl", "enable", "--now", "smbd")
     run("sudo", "systemctl", "restart", "smbd")
-    print("Shares ready: KodiBackups (write), KodiRecovery and KodiClients (read-only).")
+    print("Shares ready: KodiBackups and KodiPlaylists (write), KodiRecovery and KodiClients (read-only).")
 
 if __name__ == "__main__":
     main()

@@ -33,7 +33,9 @@ bash setup-server.sh library
 ```
 The shares installer prompts for a Samba password. The TV installer uses [Tvheadend’s documented repository](https://docs.tvheadend.org/documentation/installation/linux), then its package installer; enter an administrator account when prompted. If no account was requested, run `sudo dpkg-reconfigure tvheadend`. Confirm package availability for your Pi OS before relying on the TV install.
 
-The optional library installer prompts for your Pi hostname/IP and client subnet. It creates a narrowly scoped MariaDB user for Kodi’s versioned MyVideos/MyMusic databases and places credentials in the authenticated read-only client share. It does not scan or import existing libraries by itself. Do not forward ports 9090, 9981, 9982, 445 or 3306 from the router.
+The optional library installer prompts for your Pi hostname/IP and client subnet. It creates a narrowly scoped MariaDB user for Kodi’s versioned MyVideos/MyMusic databases and places credentials in the authenticated read-only client share. It does not scan or import existing libraries by itself. Do not forward ports 9090, 9981, 9982, 8877, 445 or 3306 from the router.
+
+The installer also starts a LAN playlist host on port 8877. IPTV Merge on the main Kodi device writes its output into **KodiPlaylists**. The Pi then serves `http://YOUR-PI:8877/playlist.m3u8` for Apple TV IPTV apps, `http://YOUR-PI:8877/kodi.m3u8` for other Kodi devices, and `http://YOUR-PI:8877/epg.xml` for the guide. The companion ZIP and captured repository ZIPs are on that same host. Apple TV uses the direct-stream playlist. Kodi add-on repositories stay with the Kodi devices.
 
 ## Shared storage
 All data stays outside Git, under `~/.local/share/kodiserver`, private to the Pi user.
@@ -43,6 +45,7 @@ All data stays outside Git, under `~/.local/share/kodiserver`, private to the Pi
 | KodiBackups | Writable inbox for dated backups, preferably in a separate folder for each source device |
 | KodiRecovery | Read-only imported recovery copies |
 | KodiClients | Read-only profile.json, companion ZIP, repository ZIPs and optional library.xml |
+| KodiPlaylists | Writable folder for IPTV Merge. Save `playlist.m3u8` and `epg.xml` here |
 
 In Kodi File Manager add a network location: SMB, Pi address, share name, Samba username/password. Kodi stores the credentials locally. Use a stable Ethernet address or DHCP reservation.
 

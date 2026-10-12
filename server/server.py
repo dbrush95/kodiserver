@@ -315,8 +315,14 @@ def services():
     result.update(inbox=str(inbox), clients=str(clients_root()))
     return result
 
+PLAYLIST_PORT = 8877
+
 def analyze_playlist(args):
-    path = Path(args.get("path", ""))
+    text = read_playlist(args.get("path", ""))
+    return classify_playlist(text)[0]
+
+def read_playlist(value):
+    path = Path(value)
     if not path.is_absolute() or path.is_symlink() or not path.is_file():
         raise ValueError("Choose an absolute path to a regular M3U file on the Pi")
     if path.stat().st_size > 20 * 1024 * 1024:
@@ -324,26 +330,122 @@ def analyze_playlist(args):
     text = path.read_text(encoding="utf-8-sig")
     if not text.lstrip().startswith("#EXTM3U"):
         raise ValueError("This is not an extended M3U playlist")
+    return text
+
+def classify_playlist(text):
+    """Split an IPTV Merge list into Apple TV direct streams and the full Kodi list."""
+    apple = ["#EXTM3U"]
+    blocks = []
+    current = None
     result = {"total": 0, "direct_candidates": 0, "kodi_dependent": 0, "other": 0}
-    dependent = False
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#EXTM3U"):
             continue
+        if line.startswith("#EXTINF"):
+            current = [line]
+            continue
+        if current is None:
+            continue
+        current.append(line)
         if line.startswith("#"):
-            if line.upper().startswith("#KODIPROP:"):
-                dependent = True
             continue
+        block = current
+        blocks.append(block)
+        current = None
         result["total"] += 1
+        kodiprop = any(item.upper().startswith("#KODIPROP:") for item in block)
         parsed = urlsplit(line.split("|", 1)[0])
-        if dependent or parsed.scheme == "plugin" or parsed.hostname in ("localhost", "127.0.0.1", "::1") or "|" in line:
-            result["kodi_dependent"] += 1
-        elif parsed.scheme in ("http", "https"):
+        direct = (not kodiprop and parsed.scheme in ("http", "https") and "|" not in line
+                  and parsed.hostname not in ("localhost", "127.0.0.1", "::1"))
+        if direct:
             result["direct_candidates"] += 1
+            apple.extend(item for item in block if not item.upper().startswith("#KODIPROP:"))
+        elif kodiprop or parsed.scheme == "plugin" or parsed.hostname in ("localhost", "127.0.0.1", "::1") or "|" in line:
+            result["kodi_dependent"] += 1
         else:
             result["other"] += 1
-        dependent = False
-    return result
+    return result, "\n".join(apple) + "\n", blocks
+
+def lan_ip():
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.168.1.1", 9))
+        return probe.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        probe.close()
+
+def playlist_base():
+    return "http://" + lan_ip() + ":" + str(PLAYLIST_PORT)
+
+def public_root():
+    path = root() / "public"
+    path.mkdir(exist_ok=True, mode=0o700)
+    return path
+
+def iptv_inbox():
+    path = root() / "inbox" / "iptv"
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return path
+
+def atomic_write(path, data):
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_bytes(data)
+    temporary.replace(path)
+
+def publish_playlist(args):
+    source = args.get("path") or str(iptv_inbox() / "playlist.m3u8")
+    text = read_playlist(source)
+    counts, apple, _blocks = classify_playlist(text)
+    epg_value = args.get("epg") or str(Path(source).with_name("epg.xml"))
+    epg_path = Path(epg_value)
+    has_epg = epg_path.is_absolute() and epg_path.is_file() and not epg_path.is_symlink()
+    if has_epg and epg_path.stat().st_size > 100 * 1024 * 1024:
+        raise ValueError("Guide file exceeds 100 MB")
+    if has_epg and 'url-tvg="' not in apple.split("\n", 1)[0]:
+        apple = '#EXTM3U url-tvg="' + playlist_base() + '/epg.xml"\n' + apple.split("\n", 1)[1]
+    folder = public_root()
+    atomic_write(folder / "playlist.m3u8", apple.encode())
+    atomic_write(folder / "kodi.m3u8", text.encode())
+    if has_epg:
+        atomic_write(folder / "epg.xml", epg_path.read_bytes())
+    meta = dict(counts)
+    meta.update(epg=has_epg, published=datetime.datetime.now(datetime.timezone.utc).isoformat())
+    atomic_write(folder / "catalog.json", json.dumps(meta).encode())
+    # Counts and local URLs only. Stream addresses stay in the hosted files.
+    return catalog()
+
+def hosted_files():
+    base = playlist_base()
+    files = []
+    companion = clients_root() / "service.kodiserver.client-0.2.0.zip"
+    if companion.is_file() and not companion.is_symlink():
+        files.append({"name": companion.name, "url": base + "/client/" + companion.name})
+    repo_dir = clients_root() / "repositories"
+    if repo_dir.is_dir():
+        for path in sorted(repo_dir.glob("repository.*.zip")):
+            if path.is_file() and not path.is_symlink() and re.fullmatch(r"repository\.[A-Za-z0-9_.-]+\.zip", path.name):
+                files.append({"name": path.name, "url": base + "/repos/" + path.name})
+    return files
+
+def catalog():
+    meta_path = public_root() / "catalog.json"
+    meta = json.loads(meta_path.read_text()) if meta_path.is_file() else {
+        "total": 0, "direct_candidates": 0, "kodi_dependent": 0, "other": 0, "epg": False, "published": ""}
+    base = playlist_base()
+    meta.update(apple_playlist=base + "/playlist.m3u8", kodi_playlist=base + "/kodi.m3u8",
+                epg_url=base + "/epg.xml", inbox=str(iptv_inbox()), files=hosted_files(),
+                host=service_state("kodiserver-playlist"))
+    return meta
+
+def service_state(name):
+    try:
+        probe = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=5)
+        return probe.stdout.strip() or "unavailable"
+    except (OSError, subprocess.TimeoutExpired):
+        return "unavailable"
 
 def main():
     os.umask(0o077)
@@ -355,7 +457,8 @@ def main():
                     "import": lambda: import_backup(args), "check-plex": lambda: check_plex(),
                     "services": lambda: services(), "profile": lambda: client_profile(),
                     "save-profile": lambda: save_profile(args), "capture-profile": lambda: capture_profile(args),
-                    "analyze-playlist": lambda: analyze_playlist(args)}
+                    "analyze-playlist": lambda: analyze_playlist(args), "publish-playlist": lambda: publish_playlist(args),
+                    "catalog": lambda: catalog()}
         if action not in handlers:
             raise ValueError("Unknown action")
         print(json.dumps(handlers[action]()))

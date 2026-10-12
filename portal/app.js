@@ -46,16 +46,26 @@ function renderProfile(profile, backups, services) {
   const address=new URL(location.href);address.protocol="http:";address.port="9981";address.pathname="/";address.search="";address.hash="";
   $("tv-open").href=address.href;
 }
+function renderCatalog(catalog) {
+  const ready=catalog.published ? catalog.direct_candidates+" Apple TV channels · "+catalog.total+" merged entries · guide "+(catalog.epg?"ready":"not included yet") : "Waiting for IPTV Merge to save playlist.m3u8 in the KodiPlaylists share.";
+  $("playlist-counts").textContent=ready+" Playlist host is "+(catalog.host||"unavailable")+".";
+  $("apple-url").textContent=catalog.apple_playlist;
+  $("kodi-url").textContent=catalog.kodi_playlist;
+  $("epg-url").textContent=catalog.epg_url;
+  const repos=$("hosted-repos"); repos.replaceChildren();
+  if(!(catalog.files||[]).length) { const empty=document.createElement("p"); empty.textContent="Repository packages appear here after you capture a Shield backup."; repos.append(empty); return; }
+  for(const file of catalog.files) { const row=document.createElement("p"); const label=document.createElement("span"); label.textContent=file.name+" · "; const link=document.createElement("code"); link.textContent=file.url; row.append(label, link); repos.append(row); }
+}
 let refreshing=false;
 async function refresh() {
   if(refreshing) return;refreshing=true;$("refresh").disabled=true;
   try {
-    const [status,backups,profile,services]=await Promise.all([api("status"),api("backups"),api("profile"),api("services")]);
+    const [status,backups,profile,services,catalogData]=await Promise.all([api("status"),api("backups"),api("profile"),api("services"),api("catalog")]);
     $("hostname").textContent=status.hostname; $("uptime").textContent="Up "+Math.floor(status.uptime/3600)+"h "+Math.floor(status.uptime%3600/60)+"m";
     $("memory").textContent=status.memory_total?Math.round(status.memory_used/status.memory_total*100)+"%":"Unavailable";
     $("memory-detail").textContent=bytes(status.memory_used)+" of "+bytes(status.memory_total);
     $("disk").textContent=bytes(status.disk_free); $("disk-detail").textContent=bytes(status.disk_total)+" total";
-    $("backup-count").textContent=backups.items.length;renderBackups(backups);renderProfile(profile,backups,services);
+    $("backup-count").textContent=backups.items.length;renderBackups(backups);renderProfile(profile,backups,services);renderCatalog(catalogData);
   } catch(error) { notice(error.message||String(error)); }
   finally { refreshing=false;$("refresh").disabled=false; }
 }
@@ -76,8 +86,13 @@ $("capture-form").addEventListener("submit",async event=>{
 });
 $("playlist-form").addEventListener("submit",async event=>{
   event.preventDefault();const button=event.submitter;button.disabled=true;
-  try{const r=await api("analyze-playlist",{path:$("playlist-path").value});$("playlist-result").textContent=r.total+" entries: "+r.direct_candidates+" direct candidates, "+r.kodi_dependent+" Kodi-dependent, "+r.other+" other. Playback must still be tested.";}
+  try{const r=await api("analyze-playlist",{path:$("playlist-path").value});$("playlist-result").textContent=r.total+" entries: "+r.direct_candidates+" Apple TV candidates, "+r.kodi_dependent+" Kodi-only, "+r.other+" other. Playback must still be tested.";}
   catch(error){$("playlist-result").textContent=error.message||String(error);}finally{button.disabled=false;}
+});
+$("publish-playlist").addEventListener("click",async ()=>{
+  const button=$("publish-playlist");button.disabled=true;notice("");
+  try{await api("publish-playlist",{path:$("playlist-path").value.trim()});await refresh();notice("Playlist published. Apple TV and the other Kodi devices can load it from this Pi.");}
+  catch(error){notice(error.message||String(error));}finally{button.disabled=false;}
 });
 $("import-form").addEventListener("submit",async event=>{
   event.preventDefault();const button=event.submitter;button.disabled=true;button.textContent="Copying backup…";notice("");
