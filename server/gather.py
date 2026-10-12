@@ -8,6 +8,7 @@ import re
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import server
@@ -32,6 +33,10 @@ SOURCES = (
      "epg": "https://i.mjh.nz/Roku/all.xml.gz", "ttl": 3 * 3600, "limit": 20 * 1024 * 1024},
     {"name": "Tubi", "m3u": "https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/tubi_all.m3u",
      "epg": "https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/tubi_epg.xml", "ttl": 3 * 3600, "limit": 8 * 1024 * 1024},
+    {"name": "Xumo", "m3u": "https://raw.githubusercontent.com/BuddyChewChew/xumo-playlist-generator/main/playlists/xumo_playlist.m3u",
+     "epg": "https://raw.githubusercontent.com/BuddyChewChew/xumo-playlist-generator/main/playlists/xumo_epg.xml.gz", "ttl": 3 * 3600, "limit": 8 * 1024 * 1024},
+    {"name": "PBS", "m3u": "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/us_pbs.m3u",
+     "ttl": 12 * 3600, "limit": 2 * 1024 * 1024},
 )
 
 
@@ -108,7 +113,8 @@ def callsign(name):
 
 
 def is_lean(name, group, source):
-    if source in ("Ohio news", "IPTV Merge"):
+    """Ohio stays small. Other lists contribute only news and weather to Tvheadend."""
+    if source == "Ohio news":
         return True
     blob = (name + " " + group).lower()
     return "news" in blob or "weather" in blob
@@ -174,20 +180,41 @@ def bind_ohio_guide(xml_bytes, entries):
                 entry["name"] = clean(match[2])
 
 
-def filter_guide(xml_bytes, wanted, prefer, limit):
+def guide_stream(source):
+    """Open XMLTV from memory or a file. Gzip is streamed so a large guide is not copied twice."""
+    if isinstance(source, (bytes, bytearray)):
+        return io.BytesIO(gunzip(bytes(source)))
+    path = source if isinstance(source, Path) else Path(source)
+    with path.open("rb") as handle:
+        magic = handle.read(2)
+    if magic == b"\x1f\x8b":
+        return gzip.open(path, "rb")
+    return path.open("rb")
+
+
+def filter_guide(xml_source, wanted, prefer, limit):
     wanted = {item for item in wanted if item}
     prefer = set(prefer) & wanted
     channels = {}
     preferred = []
     rest = []
-    for _event, elem in ET.iterparse(io.BytesIO(gunzip(xml_bytes)), events=("end",)):
-        if elem.tag == "channel" and elem.get("id") in wanted and elem.get("id") not in channels:
-            channels[elem.get("id")] = ET.tostring(elem, encoding="utf-8")
-        elif elem.tag == "programme" and elem.get("channel") in wanted:
-            blob = ET.tostring(elem, encoding="utf-8")
-            (preferred if elem.get("channel") in prefer else rest).append(blob)
-        if elem.tag in ("channel", "programme"):
-            elem.clear()
+    size = 0
+    stream = guide_stream(xml_source)
+    try:
+        for _event, elem in ET.iterparse(stream, events=("end",)):
+            if elem.tag == "channel" and elem.get("id") in wanted and elem.get("id") not in channels:
+                blob = ET.tostring(elem, encoding="utf-8")
+                channels[elem.get("id")] = blob
+                size += len(blob) + 1
+            elif elem.tag == "programme" and elem.get("channel") in wanted and size < limit:
+                blob = ET.tostring(elem, encoding="utf-8")
+                if size + len(blob) <= limit:
+                    (preferred if elem.get("channel") in prefer else rest).append(blob)
+                    size += len(blob) + 1
+            if elem.tag in ("channel", "programme"):
+                elem.clear()
+    finally:
+        stream.close()
     return channels, preferred, rest, limit
 
 

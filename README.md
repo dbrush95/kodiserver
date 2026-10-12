@@ -35,7 +35,12 @@ The shares installer prompts for a Samba password. The TV installer uses [Tvhead
 
 The optional library installer prompts for your Pi hostname/IP and client subnet. It creates a narrowly scoped MariaDB user for Kodi’s versioned MyVideos/MyMusic databases and places credentials in the authenticated read-only client share. It does not scan or import existing libraries by itself. Do not forward ports 9090, 9981, 9982, 8877, 445 or 3306 from the router.
 
-The installer also starts a LAN playlist host on port 8877. It refreshes Pluto TV, Samsung TV Plus, Plex, Roku, Tubi, and the public Ohio station list, including the Cox WHIO stream. IPTV Merge on the main Kodi device writes its output into **KodiPlaylists**. The Pi serves `http://YOUR-PI:8877/playlist.m3u8` for Apple TV, `http://YOUR-PI:8877/tvh.m3u8` for Tvheadend, `http://YOUR-PI:8877/kodi.m3u8` for other Kodi devices, and `http://YOUR-PI:8877/epg.xml` for the guide. Tvheadend receives the Ohio, news, and direct Merge channels so Kodi can use HTSP instead of rebuilding IPTV Merge. SlyGuy logins for Philo, Hulu, Disney+, and Paramount+ stay on the Shield. The companion ZIP, captured repository ZIPs, and Dayton weather are on that same host.
+The installer also starts a LAN playlist host on port 8877. About every 3 hours it refreshes Pluto TV, Samsung TV Plus, Xumo, Plex, Roku, Tubi, the public PBS station list, and the Ohio station list, including the Cox WHIO stream. IPTV Merge on the main Kodi device writes its output into **KodiPlaylists**. The Pi serves `http://YOUR-PI:8877/playlist.m3u8` for Apple TV, `http://YOUR-PI:8877/tvh.m3u8` for Tvheadend, `http://YOUR-PI:8877/kodi.m3u8` for other Kodi devices, and `http://YOUR-PI:8877/epg.xml` for the guide. Tvheadend receives the Ohio stations plus news and weather channels, so Kodi can use HTSP and leave IPTV Simple off. The companion ZIP, captured repository ZIPs, and Dayton weather are on that same host.
+
+## Live TV stays split on purpose
+Disney+, Hulu, ESPN, Paramount+, Philo, Max, and Hulu Live stay in the SlyGuy add-ons on each Kodi device. IPTV Merge on the Shield is what places Hulu Live and Philo into Kodi Live TV. Those add-ons, and the skin customization around them, only run inside Kodi. This Pi does not install Matt Huisman’s add-ons and does not rebuild IPTV Merge. Install them on the Shield from the SlyGuy repository ([matthuisman/slyguy.addons](https://github.com/matthuisman/slyguy.addons) is the upstream mirror). PBS Live and Plex Live on the Shield stay those SlyGuy add-ons. The public Plex, PBS, Tubi, Samsung TV Plus, and Xumo lists are the free copies for Apple TV and the playlist host.
+
+A Shield USB stick labeled `ESD-USB` can be mounted at `/mnt/shield-usb`. The portal lists a dated Kodi Backup folder there, and the playlist service copies it into the recovery library after the folder stops changing. The stick’s Android data is not imported. The Shield’s IPTV Merge `playlist.m3u8` and `epg.xml`, when present in that backup, are seeded into KodiPlaylists. Later saves should go straight to that share.
 
 ## Shared storage
 All data stays outside Git, under `~/.local/share/kodiserver`, private to the Pi user.
@@ -90,7 +95,7 @@ Test live TV, EPG updates and a scheduled recording before removing duplicate IP
 2. Add an authenticated SMB network location for **KodiBackups**, create a dedicated **Shield** subfolder, and choose it in Backup → Settings → Remote Directories.
 3. Include User Addons, Addon Data, Config Files, Database, Playlist, Profiles if used, and Thumbnails/Fanart. Leave compression off to support skin/profile capture.
 4. Run Backup and verify a dated restore entry appears (cancel without restoring).
-5. In the portal import that dated folder from `~/.local/share/kodiserver/inbox/Shield/<date>`, using its full absolute path.
+5. The portal copies that dated folder on its own. A USB copy mounted at `/mnt/shield-usb` is copied the same way. You can still import a dated folder by its full absolute path.
 6. Keep another copy off the Pi. Set Backup’s own schedule for periodic Shield backups.
 
 Do not point the Backup add-on at an entire mixed-use share; it manages retention inside its selected destination.

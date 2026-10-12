@@ -21,7 +21,11 @@ function show(page) {
 function renderBackups(data) {
   $("backup-location").textContent=data.path;
   const list=$("backup-list"); list.replaceChildren();
-  if(!data.items.length) { const e=document.createElement("div"); e.className="empty"; e.textContent="No recovery copies yet. Import your first Shield backup above."; list.append(e); return; }
+  if(!data.items.length) {
+    const e=document.createElement("div"); e.className="empty";
+    e.textContent="No recovery copies yet. A finished Shield backup in KodiBackups or on the USB stick is copied here on its own.";
+    list.append(e);
+  }
   for(const item of data.items) {
     const row=document.createElement("article"); row.className="backup-row";
     const heading=document.createElement("h3"); heading.textContent=item.label;
@@ -29,6 +33,16 @@ function renderBackups(data) {
     const hint=document.createElement("p"); hint.textContent="Restore source (copy this folder or ZIP to your client’s backup destination):";
     const path=document.createElement("code"); path.textContent=item.path;
     row.append(heading,detail,hint,path); list.append(row);
+  }
+  const attached=$("attached-list");
+  if(!attached) return;
+  attached.replaceChildren();
+  for(const item of data.attached||[]) {
+    const row=document.createElement("article"); row.className="backup-row";
+    const heading=document.createElement("h3"); heading.textContent="Found on a connected drive · "+item.name;
+    const detail=document.createElement("p"); detail.textContent="This folder is copied into the recovery library after it stops changing.";
+    const path=document.createElement("code"); path.textContent=item.path;
+    row.append(heading,detail,path); attached.append(row);
   }
 }
 function renderProfile(profile, backups, services) {

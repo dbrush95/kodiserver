@@ -92,7 +92,8 @@ def inventory():
             items.append(data)
         except (OSError, ValueError, KeyError):
             continue
-    return {"path": str(backup_root()), "items": sorted(items, key=lambda x: x["imported"], reverse=True)}
+    return {"path": str(backup_root()), "items": sorted(items, key=lambda x: x["imported"], reverse=True),
+            "attached": attached_backups()}
 
 def safe_files(source):
     """Reject links/special files, including symlink directories, before copying."""
@@ -168,6 +169,7 @@ def import_backup(args):
                 "size": size, "files": len(files), "archive": archive}
         (stage / "metadata.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
         stage.rename(final)
+        seed_merge_output(source)
         return data
     except BaseException:
         shutil.rmtree(stage)
@@ -392,6 +394,49 @@ def iptv_inbox():
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     return path
 
+def seed_merge_output(source):
+    """Keep the Shield's IPTV Merge output where the house publisher reads it."""
+    playlist = source / "addon_data/plugin.program.iptv.merge/playlist.m3u8"
+    if not playlist.is_file() or playlist.is_symlink() or playlist.stat().st_size > 20 * 1024 * 1024:
+        return
+    atomic_write(iptv_inbox() / "playlist.m3u8", playlist.read_bytes())
+    guide = playlist.with_name("epg.xml")
+    if guide.is_file() and not guide.is_symlink() and guide.stat().st_size <= 250 * 1024 * 1024:
+        atomic_write(iptv_inbox() / "epg.xml", guide.read_bytes())
+
+SKIP_SCAN = {"android", "lost.dir", "system volume information", ".trashes", "$recycle.bin", "nvidia_shield"}
+
+def iter_backup_folders():
+    inbox = root() / "inbox"
+    if inbox.is_dir() and not inbox.is_symlink():
+        for child in inbox.iterdir():
+            marker = child / "xbmcbackup.val"
+            if child.name != "iptv" and child.is_dir() and not child.is_symlink() and marker.is_file() and not marker.is_symlink():
+                yield child
+    for base in (Path("/mnt/shield-usb"), Path("/media"), Path("/run/media")):
+        if not base.is_dir() or base.is_symlink():
+            continue
+        for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+            path = Path(dirpath)
+            if path.is_symlink():
+                dirnames.clear()
+                continue
+            dirnames[:] = [name for name in dirnames if name.lower() not in SKIP_SCAN and not name.startswith(".")]
+            if len(path.relative_to(base).parts) > 4:
+                dirnames.clear()
+                continue
+            if "xbmcbackup.val" in filenames:
+                yield path
+                dirnames.clear()
+
+def attached_backups():
+    items = []
+    for folder in iter_backup_folders():
+        if folder.is_relative_to(root()):
+            continue
+        items.append({"path": str(folder), "name": folder.name})
+    return items
+
 def atomic_write(path, data):
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_bytes(data)
@@ -431,8 +476,8 @@ def publish_house(args):
             merge_text = ""
         epg_path = Path(args.get("epg") or path.with_name("epg.xml"))
         if (epg_path.is_absolute() and epg_path.is_file() and not epg_path.is_symlink()
-                and epg_path.stat().st_size <= 100 * 1024 * 1024):
-            merge_epg = epg_path.read_bytes()
+                and epg_path.stat().st_size <= 250 * 1024 * 1024):
+            merge_epg = epg_path
     payload = gather.build_house(merge_text, merge_epg, playlist_base())
     folder = public_root()
     atomic_write(folder / "playlist.m3u8", payload["playlist"].encode())
@@ -483,17 +528,19 @@ def weather_summary():
 _backup_quiet = {}
 
 def import_ready_backups():
-    """Copy a finished Kodi Backup from the inbox share into the recovery library."""
+    """Copy a finished Kodi Backup from the inbox share or a mounted USB stick."""
     ledger_path = root() / "backup-ledger.json"
     seen = set(json.loads(ledger_path.read_text())) if ledger_path.is_file() else set()
-    inbox = root() / "inbox"
-    inbox.mkdir(exist_ok=True, mode=0o700)
     imported = []
-    for child in inbox.iterdir():
-        if child.name == "iptv" or not child.is_dir() or child.is_symlink():
-            continue
+    for child in iter_backup_folders():
         marker = child / "xbmcbackup.val"
         if not marker.is_file() or marker.is_symlink():
+            continue
+        try:
+            key = str(child.resolve())
+        except OSError:
+            continue
+        if key in seen or child.name in seen:
             continue
         newest = marker.stat().st_mtime_ns
         for directory, _dirs, names in os.walk(child, followlinks=False):
@@ -503,15 +550,15 @@ def import_ready_backups():
                     continue
                 newest = max(newest, candidate.stat().st_mtime_ns)
         token = (newest, marker.stat().st_size)
-        previous = _backup_quiet.get(child.name)
+        previous = _backup_quiet.get(key)
         if previous is None or previous[0] != token:
-            _backup_quiet[child.name] = (token, time.time())
+            _backup_quiet[key] = (token, time.time())
             continue
-        if child.name in seen or time.time() - previous[1] < 45:
+        if key in seen or child.name in seen or time.time() - previous[1] < 45:
             continue
-        label = ("Kodi " + child.name)[:100]
+        label = ("Shield " + child.name if "/mnt/" in key or "/media/" in key else "Kodi " + child.name)[:100]
         meta = import_backup({"path": str(child), "label": label})
-        seen.add(child.name)
+        seen.add(key)
         imported.append(meta["id"])
     if imported:
         atomic_write(ledger_path, json.dumps(sorted(seen)).encode())

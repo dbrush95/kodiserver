@@ -1,3 +1,4 @@
+import gzip
 import importlib.util
 import json
 import subprocess
@@ -147,12 +148,20 @@ class ServerTests(unittest.TestCase):
             if url not in files:
                 raise ValueError("missing")
             return files[url].encode()
-        merge = "#EXTM3U\n#EXTINF:-1 tvg-id=\"philo\",Philo\nplugin://slyguy.philo/play\n#EXTINF:-1,Direct merge\nhttps://example.test/merge\n"
-        result = gather.build_house(merge, b"", "http://192.168.1.119:8877", fetch)
+        merge = "#EXTM3U\n#EXTINF:-1 tvg-id=\"philo\",Philo\nplugin://slyguy.philo/play\n#EXTINF:-1,Direct merge\nhttps://example.test/merge\n#EXTINF:-1 tvg-id=\"localnews\",Local News\nhttps://example.test/merge-news\n"
+        guide_path = Path(self.tmp.name) / "merge-epg.xml"
+        guide_path.write_bytes(gzip.compress(
+            b"<tv><channel id=\"localnews\"><display-name>Local News</display-name></channel>"
+            b"<programme channel=\"localnews\" start=\"20261012000000 +0000\" stop=\"20261012010000 +0000\"><title>Nightly</title></programme>"
+            b"<channel id=\"philo\"><display-name>Philo</display-name></channel>"
+            b"<programme channel=\"philo\" start=\"20261012000000 +0000\" stop=\"20261012010000 +0000\"><title>Secret Show</title></programme></tv>"))
+        result = gather.build_house(merge, guide_path, "http://192.168.1.119:8877", fetch)
         self.assertIn("WHIO", result["tvh"])
         self.assertIn("CBS News", result["tvh"])
-        self.assertIn("https://example.test/merge", result["tvh"])
+        self.assertIn("https://example.test/merge-news", result["tvh"])
+        self.assertNotIn("https://example.test/merge\n", result["tvh"])
         self.assertNotIn("pluto-movie", result["tvh"])
+        self.assertIn("https://example.test/merge\n", result["playlist"])
         self.assertIn("pluto-movie?token=private", result["playlist"])
         self.assertNotIn("plugin://", result["playlist"])
         self.assertIn("plugin://slyguy.philo/play", result["kodi"])
@@ -160,7 +169,10 @@ class ServerTests(unittest.TestCase):
         guide = result["epg"].decode()
         self.assertIn("WHIO Dayton", guide)
         self.assertIn("Bulletin", guide)
+        self.assertIn("Nightly", guide)
         self.assertNotIn("Secret", guide)
+        self.assertNotIn("Secret Show", guide)
+        self.assertEqual(server.inventory()["attached"], [])
 
     def test_changing_skin_does_not_reuse_previous_skin_settings(self):
         initial = server.client_profile()
