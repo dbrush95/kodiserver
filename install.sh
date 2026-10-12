@@ -15,7 +15,8 @@ sudo install -d -m 755 /usr/local/share/cockpit/kodiserver /usr/local/lib/kodise
 for name in manifest.json index.html style.css app.js; do
   sudo install -m 644 "$source_dir/portal/$name" "/usr/local/share/cockpit/kodiserver/$name"
 done
-sudo install -m 755 "$source_dir/server/server.py" "$source_dir/server/playlist_host.py" /usr/local/lib/kodiserver/
+sudo install -m 755 "$source_dir/server/server.py" "$source_dir/server/playlist_host.py" "$source_dir/server/gather.py" /usr/local/lib/kodiserver/
+sudo install -m 755 "$source_dir/server/tv_grab_kodiserver" /usr/bin/tv_grab_kodiserver
 mkdir -p "$HOME/.local/share/kodiserver/backups" "$HOME/.local/share/kodiserver/public" "$HOME/.local/share/kodiserver/inbox/iptv"
 chmod 700 "$HOME/.local/share/kodiserver" "$HOME/.local/share/kodiserver/backups" "$HOME/.local/share/kodiserver/public" "$HOME/.local/share/kodiserver/inbox" "$HOME/.local/share/kodiserver/inbox/iptv"
 python3 "$source_dir/server/build_client.py" "$HOME/.local/share/kodiserver/clients"

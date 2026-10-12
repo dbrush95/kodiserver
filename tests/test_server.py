@@ -131,6 +131,37 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn("private", json.dumps(result))
         self.assertTrue(result["apple_playlist"].endswith("/playlist.m3u8"))
 
+    def test_house_list_keeps_ohio_news_and_leaves_tokens_out_of_status(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        files = {}
+        for source in gather.SOURCES:
+            files[source["m3u"]] = "#EXTM3U\n"
+        ohio = next(source for source in gather.SOURCES if source["name"] == "Ohio news")
+        pluto = next(source for source in gather.SOURCES if source["name"] == "Pluto TV")
+        files[ohio["m3u"]] = "#EXTM3U\n#EXTINF:-1 tvg-id=\"CBS.us@WHIOTV\" group-title=\"General\",CBS WHIO-TV (1080p)\nhttps://cdn.example.test/whio/playlist.m3u8\n"
+        files[ohio["epg"]] = "<tv><channel id=\"WHIO Dayton\"><display-name>WHIO Dayton News</display-name></channel><channel id=\"Other\"><display-name>A and E</display-name></channel><programme channel=\"WHIO Dayton\" start=\"20261012000000 +0000\" stop=\"20261012010000 +0000\"><title>News</title></programme><programme channel=\"Other\" start=\"20261012000000 +0000\" stop=\"20261012010000 +0000\"><title>Secret</title></programme></tv>"
+        files[pluto["m3u"]] = "#EXTM3U\n#EXTINF:-1 tvg-id=\"news1\",CBS News 24/7\nhttps://example.test/news\n#EXTINF:-1 tvg-id=\"movie1\",Pluto Movie\nhttps://example.test/pluto-movie?token=private\n#EXTINF:-1,Nope\nplugin://addon/play\n"
+        files[pluto["epg"]] = "<tv><channel id=\"news1\"><display-name>CBS News 24/7</display-name></channel><programme channel=\"news1\" start=\"20261012000000 +0000\" stop=\"20261012010000 +0000\"><title>Bulletin</title></programme></tv>"
+        def fetch(url, limit):
+            if url not in files:
+                raise ValueError("missing")
+            return files[url].encode()
+        merge = "#EXTM3U\n#EXTINF:-1 tvg-id=\"philo\",Philo\nplugin://slyguy.philo/play\n#EXTINF:-1,Direct merge\nhttps://example.test/merge\n"
+        result = gather.build_house(merge, b"", "http://192.168.1.119:8877", fetch)
+        self.assertIn("WHIO", result["tvh"])
+        self.assertIn("CBS News", result["tvh"])
+        self.assertIn("https://example.test/merge", result["tvh"])
+        self.assertNotIn("pluto-movie", result["tvh"])
+        self.assertIn("pluto-movie?token=private", result["playlist"])
+        self.assertNotIn("plugin://", result["playlist"])
+        self.assertIn("plugin://slyguy.philo/play", result["kodi"])
+        self.assertNotIn("private", json.dumps(result["sources"]))
+        guide = result["epg"].decode()
+        self.assertIn("WHIO Dayton", guide)
+        self.assertIn("Bulletin", guide)
+        self.assertNotIn("Secret", guide)
+
     def test_changing_skin_does_not_reuse_previous_skin_settings(self):
         initial = server.client_profile()
         initial["skin_settings"] = {"theme": "dark"}

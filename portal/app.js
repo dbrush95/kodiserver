@@ -47,11 +47,26 @@ function renderProfile(profile, backups, services) {
   $("tv-open").href=address.href;
 }
 function renderCatalog(catalog) {
-  const ready=catalog.published ? catalog.direct_candidates+" Apple TV channels · "+catalog.total+" merged entries · guide "+(catalog.epg?"ready":"not included yet") : "Waiting for IPTV Merge to save playlist.m3u8 in the KodiPlaylists share.";
+  const ready=catalog.published ? catalog.direct_candidates+" free channels in one playlist · "+(catalog.lean||0)+" on Tvheadend for fast Kodi startup · guide "+(catalog.epg?"ready":"still loading") : "The Pi is building the house playlist.";
   $("playlist-counts").textContent=ready+" Playlist host is "+(catalog.host||"unavailable")+".";
-  $("apple-url").textContent=catalog.apple_playlist;
-  $("kodi-url").textContent=catalog.kodi_playlist;
-  $("epg-url").textContent=catalog.epg_url;
+  $("apple-url").textContent=catalog.apple_playlist||"";
+  $("kodi-url").textContent=catalog.kodi_playlist||"";
+  $("epg-url").textContent=catalog.epg_url||"";
+  const tvh=$("tvh-url"); if(tvh) tvh.textContent=catalog.tvh_playlist||"";
+  const weather=$("weather-line");
+  if(weather){
+    const report=catalog.weather||{};
+    weather.textContent=report.temperature==null ? "Dayton, OH weather is published from this Pi for every Kodi." : report.location+" · "+Math.round(report.temperature)+"°"+report.unit+" · "+report.condition;
+  }
+  const sources=$("source-list");
+  if(sources){
+    sources.replaceChildren();
+    for(const source of catalog.sources||[]){
+      const row=document.createElement("p");
+      row.textContent=source.name+" · "+(source.ok?source.channels+" channels":"waiting")+(source.detail?" · "+source.detail:"");
+      sources.append(row);
+    }
+  }
   const repos=$("hosted-repos"); repos.replaceChildren();
   if(!(catalog.files||[]).length) { const empty=document.createElement("p"); empty.textContent="Repository packages appear here after you capture a Shield backup."; repos.append(empty); return; }
   for(const file of catalog.files) { const row=document.createElement("p"); const label=document.createElement("span"); label.textContent=file.name+" · "; const link=document.createElement("code"); link.textContent=file.url; row.append(label, link); repos.append(row); }
@@ -91,7 +106,7 @@ $("playlist-form").addEventListener("submit",async event=>{
 });
 $("publish-playlist").addEventListener("click",async ()=>{
   const button=$("publish-playlist");button.disabled=true;notice("");
-  try{await api("publish-playlist",{path:$("playlist-path").value.trim()});await refresh();notice("Playlist published. Apple TV and the other Kodi devices can load it from this Pi.");}
+  try{await api("publish-house",{path:$("playlist-path").value.trim()});await refresh();notice("House playlist refreshed. Tvheadend, Apple TV, and the other Kodi devices read it from this Pi.");}
   catch(error){notice(error.message||String(error));}finally{button.disabled=false;}
 });
 $("import-form").addEventListener("submit",async event=>{

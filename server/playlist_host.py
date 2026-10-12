@@ -16,6 +16,7 @@ TYPES = {
     ".m3u8": "application/vnd.apple.mpegurl",
     ".xml": "application/xml",
     ".zip": "application/zip",
+    ".json": "application/json",
 }
 
 def lan_client(host):
@@ -54,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         target = None
-        if path in ("/playlist.m3u8", "/kodi.m3u8", "/epg.xml"):
+        if path in ("/playlist.m3u8", "/kodi.m3u8", "/tvh.m3u8", "/epg.xml", "/weather.json"):
             target = safe_file(server.public_root() / path[1:])
         elif path == "/client/service.kodiserver.client-0.2.0.zip":
             target = safe_file(server.clients_root() / "service.kodiserver.client-0.2.0.zip")
@@ -80,15 +81,38 @@ class Handler(BaseHTTPRequestHandler):
 
 def watch_inbox():
     last = None
+    next_house = 0
+    next_weather = 0
+    next_backup = 0
     while True:
+        now = time.time()
+        if now >= next_weather:
+            try:
+                server.refresh_weather()
+                next_weather = time.time() + 3600
+            except Exception:
+                next_weather = time.time() + 600
+        if now >= next_house:
+            try:
+                server.publish_house({})
+                next_house = time.time() + 3 * 3600
+            except Exception:
+                next_house = time.time() + 900
+        if now >= next_backup:
+            try:
+                server.import_ready_backups()
+            except Exception:
+                pass
+            next_backup = time.time() + 60
         path = server.iptv_inbox() / "playlist.m3u8"
         try:
             if path.is_file() and not path.is_symlink():
                 first = (path.stat().st_mtime_ns, path.stat().st_size)
                 time.sleep(2)
                 if path.is_file() and first == (path.stat().st_mtime_ns, path.stat().st_size) and first != last:
-                    server.publish_playlist({"path": str(path)})
+                    server.publish_house({"path": str(path)})
                     last = first
+                    next_house = time.time() + 3 * 3600
         except Exception:
             # Keep the previous published list. The portal reports the last good publish.
             pass

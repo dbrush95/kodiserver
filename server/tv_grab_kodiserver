@@ -1,0 +1,8 @@
+#!/bin/sh
+# Tvheadend guide grabber. It reads the playlist host on this Pi.
+case "$1" in
+  --description) echo "Kodi Server house guide"; exit 0 ;;
+  --capabilities) echo "baseline"; exit 0 ;;
+  --version) echo "1.0"; exit 0 ;;
+esac
+exec curl -fsS --max-time 90 http://127.0.0.1:8877/epg.xml

@@ -10,6 +10,8 @@ import socket
 import stat
 import sys
 import subprocess
+import time
+import urllib.request
 import xml.etree.ElementTree as ET
 import uuid
 import zipfile
@@ -417,6 +419,104 @@ def publish_playlist(args):
     # Counts and local URLs only. Stream addresses stay in the hosted files.
     return catalog()
 
+def publish_house(args):
+    import gather
+    merge_text = ""
+    merge_epg = b""
+    path = Path(args.get("path") or (iptv_inbox() / "playlist.m3u8"))
+    if path.is_absolute() and path.is_file() and not path.is_symlink():
+        try:
+            merge_text = read_playlist(str(path))
+        except ValueError:
+            merge_text = ""
+        epg_path = Path(args.get("epg") or path.with_name("epg.xml"))
+        if (epg_path.is_absolute() and epg_path.is_file() and not epg_path.is_symlink()
+                and epg_path.stat().st_size <= 100 * 1024 * 1024):
+            merge_epg = epg_path.read_bytes()
+    payload = gather.build_house(merge_text, merge_epg, playlist_base())
+    folder = public_root()
+    atomic_write(folder / "playlist.m3u8", payload["playlist"].encode())
+    atomic_write(folder / "tvh.m3u8", payload["tvh"].encode())
+    atomic_write(folder / "kodi.m3u8", payload["kodi"].encode())
+    atomic_write(folder / "epg.xml", payload["epg"])
+    meta = {
+        "total": payload["total"], "direct_candidates": payload["direct_candidates"],
+        "kodi_dependent": payload["kodi_dependent"], "other": 0, "lean": payload["lean"],
+        "epg": payload["guide_channels"] > 0,
+        "published": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "sources": payload["sources"],
+    }
+    atomic_write(folder / "catalog.json", json.dumps(meta).encode())
+    return catalog()
+
+WEATHER_TEXT = {
+    0: "Clear", 1: "Mostly clear", 2: "Partly cloudy", 3: "Cloudy", 45: "Fog", 48: "Fog",
+    51: "Drizzle", 53: "Drizzle", 55: "Drizzle", 61: "Rain", 63: "Rain", 65: "Rain",
+    71: "Snow", 73: "Snow", 75: "Snow", 80: "Showers", 81: "Showers", 82: "Showers",
+    95: "Thunderstorm",
+}
+
+def refresh_weather():
+    """Dayton conditions for every client. WHIO is the Dayton station."""
+    url = ("https://api.open-meteo.com/v1/forecast?latitude=39.7589&longitude=-84.1916"
+           "&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min"
+           "&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=1")
+    request = urllib.request.Request(url, headers={"User-Agent": "kodiserver"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        data = json.loads(response.read().decode())
+    current = data.get("current") or {}
+    code = int(current.get("weather_code", -1))
+    summary = {"location": "Dayton, OH", "temperature": current.get("temperature_2m"), "unit": "F",
+               "condition": WEATHER_TEXT.get(code, "Weather"),
+               "updated": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+    atomic_write(public_root() / "weather.json", json.dumps(summary).encode())
+    if not client_profile().get("weather_location"):
+        save_profile({"weather_location": "Dayton, OH", "tvh_host": client_profile().get("tvh_host") or "192.168.1.119"})
+    return summary
+
+def weather_summary():
+    path = public_root() / "weather.json"
+    if not path.is_file() or path.is_symlink():
+        return {"location": "Dayton, OH", "temperature": None, "unit": "F", "condition": "", "updated": ""}
+    return json.loads(path.read_text())
+
+_backup_quiet = {}
+
+def import_ready_backups():
+    """Copy a finished Kodi Backup from the inbox share into the recovery library."""
+    ledger_path = root() / "backup-ledger.json"
+    seen = set(json.loads(ledger_path.read_text())) if ledger_path.is_file() else set()
+    inbox = root() / "inbox"
+    inbox.mkdir(exist_ok=True, mode=0o700)
+    imported = []
+    for child in inbox.iterdir():
+        if child.name == "iptv" or not child.is_dir() or child.is_symlink():
+            continue
+        marker = child / "xbmcbackup.val"
+        if not marker.is_file() or marker.is_symlink():
+            continue
+        newest = marker.stat().st_mtime_ns
+        for directory, _dirs, names in os.walk(child, followlinks=False):
+            for name in names:
+                candidate = Path(directory) / name
+                if candidate.is_symlink():
+                    continue
+                newest = max(newest, candidate.stat().st_mtime_ns)
+        token = (newest, marker.stat().st_size)
+        previous = _backup_quiet.get(child.name)
+        if previous is None or previous[0] != token:
+            _backup_quiet[child.name] = (token, time.time())
+            continue
+        if child.name in seen or time.time() - previous[1] < 45:
+            continue
+        label = ("Kodi " + child.name)[:100]
+        meta = import_backup({"path": str(child), "label": label})
+        seen.add(child.name)
+        imported.append(meta["id"])
+    if imported:
+        atomic_write(ledger_path, json.dumps(sorted(seen)).encode())
+    return {"imported": imported}
+
 def hosted_files():
     base = playlist_base()
     files = []
@@ -436,8 +536,9 @@ def catalog():
         "total": 0, "direct_candidates": 0, "kodi_dependent": 0, "other": 0, "epg": False, "published": ""}
     base = playlist_base()
     meta.update(apple_playlist=base + "/playlist.m3u8", kodi_playlist=base + "/kodi.m3u8",
-                epg_url=base + "/epg.xml", inbox=str(iptv_inbox()), files=hosted_files(),
-                host=service_state("kodiserver-playlist"))
+                tvh_playlist=base + "/tvh.m3u8", epg_url=base + "/epg.xml",
+                weather_url=base + "/weather.json", inbox=str(iptv_inbox()), files=hosted_files(),
+                host=service_state("kodiserver-playlist"), weather=weather_summary())
     return meta
 
 def service_state(name):
@@ -458,7 +559,7 @@ def main():
                     "services": lambda: services(), "profile": lambda: client_profile(),
                     "save-profile": lambda: save_profile(args), "capture-profile": lambda: capture_profile(args),
                     "analyze-playlist": lambda: analyze_playlist(args), "publish-playlist": lambda: publish_playlist(args),
-                    "catalog": lambda: catalog()}
+                    "publish-house": lambda: publish_house(args), "catalog": lambda: catalog()}
         if action not in handlers:
             raise ValueError("Unknown action")
         print(json.dumps(handlers[action]()))
