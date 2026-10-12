@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const titles = {overview:"Your media, at home.",backups:"A safe home for your setup.",files:"Files on this Pi.",plex:"Plex, when you’re ready.",tv:"Live TV, from one place.",clients:"The same home on every screen.",terminal:"Your Pi. Your command.",guide:"Set up once. Keep it safe."};
+const titles = {overview:"Your media, at home.",backups:"A safe home for your setup.",files:"Files on this Pi.",plex:"Movies on Plex. Live TV from the house list.",tv:"Live TV, from one place.",clients:"The same home on every screen.",terminal:"Your Pi. Your command.",guide:"Set up once. Keep it safe."};
 function notice(message) { $("notice").textContent=message; $("notice").hidden=!message; }
 function bytes(n) { if(!Number.isFinite(n)) return "—"; return n>=1073741824 ? (n/1073741824).toFixed(1)+" GB" : Math.round(n/1048576)+" MB"; }
 async function api(action, args={}) {
@@ -139,7 +139,9 @@ function renderProfile(profile, backups, services) {
   $("tv-open").href=address.href;
 }
 function renderCatalog(catalog) {
-  const ready=catalog.published ? catalog.direct_candidates+" free channels in one playlist · "+(catalog.lean||0)+" on Tvheadend for fast Kodi startup · guide "+(catalog.epg?"ready":"still loading") : "The Pi is building the house playlist.";
+  const active=catalog.active!=null ? " · "+catalog.active+" active" : "";
+  const held=catalog.inactive ? " · "+catalog.inactive+" held as duplicates" : "";
+  const ready=catalog.published ? catalog.direct_candidates+" free channels"+active+held+" · "+(catalog.lean||0)+" on Tvheadend for fast Kodi startup · guide "+(catalog.epg?"ready":"still loading") : "The Pi is building the house playlist.";
   $("playlist-counts").textContent=ready+" Playlist host is "+(catalog.host||"unavailable")+".";
   $("apple-url").textContent=catalog.apple_playlist||"";
   $("kodi-url").textContent=catalog.kodi_playlist||"";
@@ -163,6 +165,78 @@ function renderCatalog(catalog) {
   if(!(catalog.files||[]).length) { const empty=document.createElement("p"); empty.textContent="Repository packages appear here after you capture a Shield backup."; repos.append(empty); return; }
   for(const file of catalog.files) { const row=document.createElement("p"); const label=document.createElement("span"); label.textContent=file.name+" · "; const link=document.createElement("code"); link.textContent=file.url; row.append(label, link); repos.append(row); }
 }
+let lineupData=null;
+function renderLineup(data) {
+  lineupData=data||{held:[],tuners:[],active:0,inactive:0};
+  const summary=$("lineup-summary");
+  if(summary){
+    const resident=data.guide_resident ? "Guide is loaded in memory ("+bytes(data.guide_bytes)+")." : "Guide is still loading into memory.";
+    summary.textContent=(data.active||0)+" active channels. "+(data.inactive||0)+" duplicates held. Sorted by "+(data.sort||"source, then name")+". "+resident;
+  }
+  const tuners=$("tuner-list");
+  if(tuners){
+    tuners.replaceChildren();
+    const rows=data.tuners||[];
+    if(!rows.length){
+      const empty=document.createElement("p");
+      empty.textContent="Tuners appear here after the lineup is published.";
+      tuners.append(empty);
+    }
+    for(const tuner of rows){
+      const row=document.createElement("p");
+      row.textContent="Tuner "+tuner.index+" · "+tuner.channels+" channels · 192.168.1.120 port "+tuner.port;
+      tuners.append(row);
+    }
+  }
+  paintHeld();
+}
+function paintHeld() {
+  const list=$("held-list");
+  if(!list||!lineupData) return;
+  const query=($("held-filter")&&$("held-filter").value||"").trim().toLowerCase();
+  list.replaceChildren();
+  const rows=(lineupData.held||[]).filter(item=>!query||(item.name||"").toLowerCase().includes(query)||(item.source||"").toLowerCase().includes(query));
+  if(!rows.length){
+    const empty=document.createElement("p");
+    empty.className="empty";
+    empty.textContent=query?"No held channel matches that name.":"No held duplicates. Every remaining channel is active.";
+    list.append(empty);
+    return;
+  }
+  for(const item of rows){
+    const row=document.createElement("article");
+    row.className="backup-row";
+    const heading=document.createElement("h3");
+    heading.textContent=item.name+(item.active?" · added back":"");
+    const detail=document.createElement("p");
+    detail.textContent=item.source+" · "+item.quality+". Kept "+item.kept_name+" from "+item.kept_source+" · "+item.kept_quality+".";
+    const guide=document.createElement("p");
+    const shows=(item.programmes||[]).map(show=>show.title).filter(Boolean);
+    const kept=(item.kept_programmes||[]).map(show=>show.title).filter(Boolean);
+    const parts=[];
+    if(item.guide_name||shows.length) parts.push("This copy"+(item.guide_name?" ("+item.guide_name+")":"")+": "+(shows.join(" · ")||"no programmes"));
+    if(item.kept_guide_name||kept.length) parts.push("Kept copy"+(item.kept_guide_name?" ("+item.kept_guide_name+")":"")+": "+(kept.join(" · ")||"no programmes"));
+    guide.textContent=parts.join(" ")||"No guide data for this channel yet.";
+    const button=document.createElement("button");
+    button.type="button";
+    button.className="secondary";
+    button.textContent=item.active?"Hold again":"Add this channel back";
+    button.addEventListener("click",()=>decideLineup(item.key,!item.active,button));
+    row.append(heading,detail,guide,button);
+    list.append(row);
+  }
+}
+async function decideLineup(key, active, button) {
+  button.disabled=true;
+  notice("");
+  try{
+    renderLineup(await api("lineup-decide",{key,active}));
+    notice(active?"Channel added back. The tuners will pick it up.":"Channel held again.");
+  }catch(error){
+    notice(error.message||String(error));
+    button.disabled=false;
+  }
+}
 let refreshing=false;
 async function refresh() {
   if(refreshing) return;refreshing=true;$("refresh").disabled=true;
@@ -173,6 +247,7 @@ async function refresh() {
     $("memory-detail").textContent=bytes(status.memory_used)+" of "+bytes(status.memory_total);
     $("disk").textContent=bytes(status.disk_free); $("disk-detail").textContent=bytes(status.disk_total)+" total";
     $("backup-count").textContent=backups.items.length;renderBackups(backups);renderProfile(profile,backups,services);renderCatalog(catalogData);
+    try{renderLineup(await api("lineup"));}catch(error){const summary=$("lineup-summary"); if(summary) summary.textContent=error.message||String(error);}
     if(!$("files").hidden) await loadFiles($("file-path").dataset.path||"");
   } catch(error) { notice(error.message||String(error)); }
   finally { refreshing=false;$("refresh").disabled=false; }
@@ -180,6 +255,8 @@ async function refresh() {
 document.querySelectorAll("[data-page],[data-go]").forEach(el=>el.addEventListener("click",()=>{location.hash=el.dataset.page||el.dataset.go;}));
 window.addEventListener("hashchange",()=>show(location.hash.slice(1)));
 $("refresh").addEventListener("click",()=>{notice("");refresh();});
+const heldFilter=$("held-filter");
+if(heldFilter) heldFilter.addEventListener("input",()=>paintHeld());
 $("profile-form").addEventListener("submit",async event=>{
   event.preventDefault();const button=event.submitter;button.disabled=true;notice("");
   const args={};

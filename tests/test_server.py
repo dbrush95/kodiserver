@@ -164,7 +164,12 @@ class ServerTests(unittest.TestCase):
         self.assertIn("https://example.test/merge\n", result["playlist"])
         self.assertIn("pluto-movie?token=private", result["playlist"])
         self.assertNotIn("plugin://", result["playlist"])
-        self.assertIn("plugin://slyguy.philo/play", result["kodi"])
+        self.assertNotIn("plugin://", result["kodi"])
+        self.assertIn("WHIO", result["kodi"])
+        self.assertNotIn("pluto-movie", result["kodi"])
+        self.assertIn('url-tvg="http://192.168.1.119:8877/kodi.xml"', result["kodi"])
+        self.assertIn("WHIO Dayton", result["kodi_epg"].decode())
+        self.assertNotIn("Bulletin", result["kodi_epg"].decode())
         self.assertNotIn("private", json.dumps(result["sources"]))
         guide = result["epg"].decode()
         self.assertIn("WHIO Dayton", guide)
@@ -173,6 +178,439 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn("Secret", guide)
         self.assertNotIn("Secret Show", guide)
         self.assertEqual(server.inventory()["attached"], [])
+
+    def test_pluto_partner_links_become_master_playlists(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        entries = [{
+            "name": "News", "source": "Pluto TV", "group": "Pluto TV", "logo": "", "lean": True,
+            "tvg_id": "656538f8954b020008d389db",
+            "url": "https://jmp2.uk/plu-656538f8954b020008d389db.m3u8",
+        }, {
+            "name": "Other", "source": "Samsung TV Plus", "group": "Samsung TV Plus", "logo": "",
+            "lean": False, "tvg_id": "sam", "url": "https://jmp2.uk/stvp-US.m3u8",
+        }]
+        def fake_session():
+            return {"stitcher": "https://stitcher.example.pluto.tv", "query": "appName=web&jwt=secret-token"}
+        self.assertEqual(gather.rewrite_pluto(entries, fake_session), 1)
+        self.assertTrue(entries[0]["url"].startswith("https://stitcher.example.pluto.tv/v2/stitch/hls/channel/656538f8954b020008d389db/master.m3u8?"))
+        self.assertIn("masterJWTPassthrough=true", entries[0]["url"])
+        self.assertIn("includeExtendedEvents=true", entries[0]["url"])
+        self.assertNotIn("/v1/stitch/embed/", entries[0]["url"])
+        self.assertNotIn("jmp2.uk", entries[0]["url"])
+        self.assertEqual(entries[1]["url"], "https://jmp2.uk/stvp-US.m3u8")
+        broken = [{"name": "Bad", "source": "Pluto TV", "url": "https://jmp2.uk/plu-not-a-channel.m3u8"}]
+        def explode():
+            raise AssertionError("session")
+        self.assertEqual(gather.rewrite_pluto(broken, explode), 0)
+
+    def test_pluto_apple_master_keeps_the_widescreen_rung(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        master = "\n".join((
+            "#EXTM3U",
+            '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",URI="https://cdn.example/subs.m3u8"',
+            '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",DEFAULT=YES,URI="https://cdn.example/audio.m3u8"',
+            '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English AD",URI="https://cdn.example/ad.m3u8",CHARACTERISTICS="public.accessibility.describes-video"',
+            "#EXT-X-STREAM-INF:BANDWIDTH=640930,AUDIO=\"audio\"",
+            "https://cdn.example/640930/playlist.m3u8",
+            "#EXT-X-STREAM-INF:BANDWIDTH=1577180,AUDIO=\"audio\"",
+            "https://cdn.example/1577180/playlist.m3u8",
+            "#EXT-X-STREAM-INF:BANDWIDTH=1042180,AUDIO=\"audio\"",
+            "https://cdn.example/1042180/playlist.m3u8",
+            "#EXT-X-STREAM-INF:BANDWIDTH=3321280,AUDIO=\"audio\"",
+            "https://cdn.example/3321280/playlist.m3u8",
+        ))
+        text = gather.apple_pluto_master(master, "https://stitcher.example/master.m3u8")
+        self.assertIn("#EXT-X-VERSION:7", text)
+        self.assertIn("FRAME-RATE=30.000", text)
+        self.assertIn("RESOLUTION=1280x720", text)
+        self.assertIn('CODECS="avc1.64001f,mp4a.40.2"', text)
+        self.assertIn('CODECS="mp4a.40.2",URI="https://cdn.example/audio.m3u8"', text)
+        self.assertIn("CLOSED-CAPTIONS=NONE", text)
+        self.assertIn("https://cdn.example/3321280/playlist.m3u8", text)
+        self.assertIn("https://cdn.example/audio.m3u8", text)
+        self.assertNotIn("640930", text)
+        self.assertNotIn("1577180", text)
+        self.assertNotIn("1042180", text)
+        self.assertNotIn("426x240", text)
+        self.assertNotIn("subs", text)
+        self.assertNotIn("describes-video", text)
+        self.assertEqual(gather.apple_pluto_master("#EXTM3U\n", "https://stitcher.example/master.m3u8"), "")
+        muxed = "\n".join((
+            "#EXTM3U",
+            '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Original",DEFAULT=YES,CHANNELS="2"',
+            "#EXT-X-STREAM-INF:BANDWIDTH=640930,AUDIO=\"audio\"",
+            "https://cdn.example/640930/playlist.m3u8",
+            "#EXT-X-STREAM-INF:BANDWIDTH=3321280,AUDIO=\"audio\"",
+            "https://cdn.example/3321280/playlist.m3u8",
+        ))
+
+        def measured(_url):
+            raise AssertionError("known 16:9 rung must not be measured")
+
+        widescreen = gather.apple_pluto_master(muxed, "https://stitcher.example/master.m3u8", measure=measured)
+        self.assertIn("RESOLUTION=1280x720", widescreen)
+        self.assertIn('CODECS="avc1.64001f,mp4a.40.2"', widescreen)
+        self.assertIn("https://cdn.example/3321280/playlist.m3u8", widescreen)
+        self.assertNotIn("TYPE=AUDIO", widescreen)
+        self.assertNotIn("640930", widescreen)
+        self.assertNotIn("426x240", widescreen)
+        known = gather.apple_pluto_master(master, "https://stitcher.example/master.m3u8", measure=measured)
+        self.assertIn("RESOLUTION=1280x720", known)
+        self.assertIn("https://cdn.example/audio.m3u8", known)
+
+    def test_pluto_channels_do_not_share_a_session(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        tokens = []
+        gate = __import__("threading").Lock()
+
+        def getter():
+            with gate:
+                token = "token-%d" % (len(tokens) + 1)
+                tokens.append(token)
+            return {"stitcher": "https://stitcher.example.pluto.tv", "query": "jwt=" + token}
+
+        fetched = []
+
+        def fetch(url):
+            fetched.append(url)
+            return b"\n".join((
+                b"#EXTM3U",
+                b"#EXT-X-STREAM-INF:BANDWIDTH=3321280",
+                b"https://cdn.example/playlist.m3u8",
+            ))
+
+        entries = []
+        for channel_id in ("656538f8954b020008d389db", "656538f8954b020008d389dc"):
+            entries.append({
+                "name": channel_id, "source": "Pluto TV", "group": "General", "logo": "",
+                "tvg_id": channel_id,
+                "url": "https://stitcher.example.pluto.tv/v2/stitch/hls/channel/%s/master.m3u8?jwt=shared" % channel_id,
+            })
+        self.assertEqual(gather.install_pluto_apple(entries, "http://192.168.1.120:8877", fetch=fetch, session_getter=getter), 2)
+        self.assertEqual(sorted(tokens), ["token-1", "token-2"])
+        self.assertEqual(len(fetched), 2)
+        self.assertEqual(len({url.split("jwt=", 1)[1] for url in fetched}), 2)
+        self.assertNotIn("jwt=shared", " ".join(fetched))
+        self.assertTrue(all(url.startswith("http://192.168.1.120:8877/pluto/") for url in (entries[0]["url"], entries[1]["url"])))
+
+    def test_kodi_playlist_keeps_tubi_ohio_and_xumo(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        entries = []
+        for source, name, url in (
+            ("Tubi", "Tubi Sports", "https://example.test/tubi"),
+            ("Xumo", "Xumo Life", "https://example.test/xumo"),
+            ("Ohio news", "WHIO", "https://example.test/whio"),
+            ("Pluto TV", "Pluto Comedy", "https://example.test/pluto"),
+            ("Plex", "Plex Movie", "https://example.test/plex"),
+        ):
+            entries.append({
+                "name": name, "url": url, "tvg_id": source.lower().replace(" ", "-"),
+                "logo": "", "group": "General", "source": source, "lean": source == "Ohio news",
+            })
+        guide = b"<tv></tv>"
+        result = gather.finish_lineup(entries, [["#EXTINF:-1,Philo", "plugin://slyguy.philo/play"]],
+                                      guide, "http://192.168.1.120:8877",
+                                      probe=lambda url: {"bandwidth": 0, "height": 0})
+        kodi = result["kodi"]
+        self.assertIn("Tubi Sports", kodi)
+        self.assertIn("Xumo Life", kodi)
+        self.assertIn("WHIO", kodi)
+        self.assertNotIn("Pluto Comedy", kodi)
+        self.assertNotIn("Plex Movie", kodi)
+        self.assertNotIn("plugin://", kodi)
+        self.assertIn('url-tvg="http://192.168.1.120:8877/kodi.xml"', kodi)
+        self.assertIn("Pluto Comedy", result["playlist"])
+        self.assertIn('url-tvg="http://192.168.1.120:8877/epg.xml"', result["playlist"])
+
+    def test_combined_guide_is_grouped_by_genre(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        plex = (
+            "#EXTM3U\n"
+            '#EXTINF:-1 tvg-id="out" group-title="Sports & Outdoors",Outdoor Hour\n'
+            "https://example.test/outdoor\n"
+            '#EXTINF:-1 tvg-id="movie" group-title="United States",Friday Night Movie\n'
+            "https://example.test/movie\n"
+            '#EXTINF:-1 tvg-id="plain" group-title="United States",Something Else\n'
+            "https://example.test/plain\n"
+        )
+        ohio = (
+            "#EXTM3U\n"
+            '#EXTINF:-1 tvg-id="WHIOTV" group-title="Local",WHIO\n'
+            "https://example.test/whio\n"
+        )
+        kids = (
+            "#EXTM3U\n"
+            '#EXTINF:-1 tvg-id="kids" group-title="Kids",PBS Kids\n'
+            "https://example.test/kids\n"
+        )
+        education = (
+            "#EXTM3U\n"
+            '#EXTINF:-1 tvg-id="ark" group-title="Stations",Arkansas PBS\n'
+            "https://example.test/arkansas\n"
+        )
+        direct, _plugins = gather.walk_entries(plex, "Plex")
+        news, _plugins = gather.walk_entries(ohio, "Ohio news")
+        kid_rows, _plugins = gather.walk_entries(kids, "PBS")
+        edu_rows, _plugins = gather.walk_entries(education, "PBS")
+        rows = direct + news + kid_rows + edu_rows
+        by_name = {item["name"]: item for item in rows}
+        self.assertEqual(by_name["Outdoor Hour"]["group"], "Sports")
+        self.assertEqual(by_name["Outdoor Hour"]["source"], "Plex")
+        self.assertEqual(by_name["Friday Night Movie"]["group"], "Movies")
+        self.assertEqual(by_name["Something Else"]["group"], "General")
+        self.assertEqual(by_name["WHIO"]["group"], "News")
+        self.assertEqual(by_name["WHIO"]["source"], "Ohio news")
+        self.assertTrue(by_name["WHIO"]["lean"])
+        self.assertFalse(by_name["Something Else"]["lean"])
+        self.assertEqual(by_name["PBS Kids"]["group"], "Kids")
+        self.assertEqual(by_name["Arkansas PBS"]["group"], "Education")
+        guide = (
+            b'<tv><channel id="out"><display-name>Outdoor Hour</display-name></channel>'
+            b'<programme channel="out" start="20261012000000 +0000" stop="20261012010000 +0000">'
+            b"<title>Trail</title><category lang=\"en\">Sports</category></programme>"
+            b'<channel id="movie"><display-name>Friday Night Movie</display-name></channel>'
+            b"</tv>"
+        )
+        result = gather.finish_lineup(rows, [], guide, "http://192.168.1.120:8877",
+                                      probe=lambda url: {"bandwidth": 0, "height": 0})
+        playlist = result["playlist"]
+        self.assertIn('group-title="Sports"', playlist)
+        self.assertIn('group-title="Movies"', playlist)
+        self.assertIn('group-title="General"', playlist)
+        self.assertIn('group-title="News"', playlist)
+        self.assertIn('group-title="Kids"', playlist)
+        self.assertIn('group-title="Education"', playlist)
+        self.assertNotIn('group-title="United States"', playlist)
+        self.assertNotIn('group-title="Plex"', playlist)
+        self.assertIn('group-title="House"', result["tuners"][0]["playlist"])
+        self.assertNotIn('group-title="Sports"', result["tuners"][0]["playlist"])
+        epg = result["epg"].decode()
+        self.assertIn('<category lang="en">Sports</category>', epg)
+        self.assertIn('<category lang="en">Movies</category>', epg)
+        self.assertIn("<title>Trail</title>", epg)
+        positions = [playlist.index(name) for name in (
+            "WHIO", "Outdoor Hour", "Friday Night Movie", "PBS Kids", "Arkansas PBS", "Something Else")]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_duplicate_keeps_the_clearer_stream_and_can_be_approved(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        def rows():
+            return [
+                {"name": "ABC News Live", "url": "https://example.test/low", "tvg_id": "low-id",
+                 "logo": "", "group": "Xumo", "source": "Xumo", "lean": True},
+                {"name": "ABC News Live HD", "url": "https://example.test/high", "tvg_id": "high-id",
+                 "logo": "", "group": "Pluto TV", "source": "Pluto TV", "lean": True},
+            ]
+        def probe(url):
+            return {"bandwidth": 3300000, "height": 1080} if url.endswith("high") else {"bandwidth": 800000, "height": 480}
+        guide = (b'<tv><channel id="high-id"><display-name>ABC News Live</display-name></channel>'
+                 b'<programme channel="high-id" start="20261012000000 +0000" stop="20261012010000 +0000">'
+                 b'<title>Evening Report</title></programme></tv>')
+        first = gather.finish_lineup(rows(), [], guide, "http://192.168.1.120:8877", probe=probe)
+        self.assertIn("https://example.test/high", first["playlist"])
+        self.assertIn("https://example.test/low", first["playlist"])
+        self.assertIn("https://example.test/high", first["tuners"][0]["playlist"])
+        self.assertNotIn("https://example.test/low", first["tuners"][0]["playlist"])
+        self.assertEqual(len(first["tuners"]), 1)
+        self.assertLessEqual(first["tuners"][0]["playlist"].count("#EXTINF"), 450)
+        self.assertIn('group-title="House"', first["tuners"][0]["playlist"])
+        text = json.dumps(first["lineup"])
+        self.assertNotIn("example.test", text)
+        self.assertNotIn("http", text)
+        self.assertEqual(first["lineup"]["held"][0]["source"], "Xumo")
+        self.assertIn("Evening Report", text)
+        self.assertFalse(first["lineup"]["held"][0]["active"])
+        gather.save_decision(first["lineup"]["held"][0]["key"], True)
+        second = gather.finish_lineup(rows(), [], guide, "http://192.168.1.120:8877", probe=probe)
+        self.assertIn("https://example.test/low", second["playlist"])
+        self.assertIn("https://example.test/high", second["playlist"])
+        self.assertTrue(second["lineup"]["held"][0]["active"])
+        with self.assertRaises(ValueError):
+            gather.save_decision("not-a-channel", True)
+
+    def test_tuner_playlist_keeps_names_threadfin_would_split(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        entries = [{
+            "name": "80's Sitcom Flashback",
+            "url": "https://example.test/80's.m3u8",
+            "tvg_id": "sitcom",
+            "logo": 'https://example.test/logo"80.jpg',
+            "group": "Pluto TV",
+            "source": "Pluto TV",
+            "lean": False,
+        }]
+        result = gather.finish_lineup(entries, [], b"<tv></tv>", "http://192.168.1.120:8877",
+                                      probe=lambda url: {"bandwidth": 0, "height": 0})
+        playlist = result["tuners"][0]["playlist"]
+        self.assertNotIn("'", playlist)
+        self.assertIn('group-title="House"', playlist)
+        self.assertIn("80\u2019s Sitcom Flashback", playlist)
+        self.assertIn("https://example.test/80%27s.m3u8", playlist)
+        self.assertNotIn('logo"80', playlist)
+        self.assertIn("80's Sitcom Flashback", result["playlist"])
+        extinf = next(line for line in playlist.splitlines() if line.startswith("#EXTINF"))
+        self.assertIn('tvg-name="80\u2019s Sitcom Flashback ', extinf)
+        self.assertTrue(extinf.endswith(",80\u2019s Sitcom Flashback"))
+
+    def test_tuner_playlist_keeps_channels_that_share_a_short_name(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        entries = []
+        for suffix in ("a", "b"):
+            entries.append({
+                "name": "UFC",
+                "url": "https://example.test/ufc-%s" % suffix,
+                "tvg_id": "ufc-%s" % suffix,
+                "logo": "",
+                "group": "Plex",
+                "source": "Plex",
+                "lean": False,
+            })
+        result = gather.finish_lineup(entries, [], b"<tv></tv>", "http://192.168.1.120:8877",
+                                      probe=lambda url: {"bandwidth": 0, "height": 0})
+        playlist = result["tuners"][0]["playlist"]
+        names = []
+        for line in playlist.splitlines():
+            if 'tvg-name="' not in line:
+                continue
+            names.append(line.split('tvg-name="', 1)[1].split('"', 1)[0])
+            self.assertTrue(line.endswith(",UFC"))
+        self.assertEqual(len(names), 2)
+        self.assertEqual(len(set(names)), 2)
+        self.assertEqual(result["playlist"].count(",UFC"), 2)
+        self.assertNotIn("tvg-name=\"UFC ", result["playlist"])
+
+    def test_same_station_name_copies_listings_and_skips_lookalikes(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        entries = [
+            {"name": "BBC Earth (1080p)", "url": "https://example.test/earth", "tvg_id": "earth-copy",
+             "logo": "", "group": "Fire TV", "source": "Fire TV", "lean": False},
+            {"name": "ABC News Live 3 (720p)", "url": "https://example.test/abc", "tvg_id": "abc-copy",
+             "logo": "", "group": "ABC News", "source": "ABC News", "lean": True},
+            {"name": "News", "url": "https://example.test/news", "tvg_id": "news-copy",
+             "logo": "", "group": "SOFAST", "source": "SOFAST", "lean": True},
+            {"name": "AWE", "url": "https://example.test/awe", "tvg_id": "",
+             "logo": "", "group": "Klowd", "source": "Klowd", "lean": False},
+            {"name": "Boston 25", "url": "https://example.test/boston", "tvg_id": "boston-copy",
+             "logo": "", "group": "Xumo", "source": "Xumo", "lean": True},
+            {"name": "Fuel TV", "url": "https://example.test/fuel", "tvg_id": "fuel-copy",
+             "logo": "", "group": "Klowd", "source": "Klowd", "lean": False},
+            {"name": "Arkansas PBS", "url": "https://example.test/arkansas", "tvg_id": "PBS.us@KETS",
+             "logo": "", "group": "PBS", "source": "PBS", "lean": False},
+            {"name": "WMPT-DT2 (PBS Create)", "url": "https://example.test/create", "tvg_id": "Create.us@WMPT",
+             "logo": "", "group": "PBS", "source": "PBS", "lean": False},
+        ]
+        house = (
+            b'<tv><channel id="earth-donor"><display-name>BBC Earth</display-name></channel>'
+            b'<programme channel="earth-donor" start="20261012000000 +0000" stop="20261012100000 +0000">'
+            b'<title>Planet</title></programme></tv>'
+        )
+        donor = (
+            b'<tv><channel id="abc"><display-name>ABC News Live</display-name></channel>'
+            b'<programme channel="abc" start="20261012020000 +0000" stop="20261012030000 +0000">'
+            b'<title>World News</title></programme>'
+            b'<programme channel="abc" start="20220101000000 +0000" stop="20220101010000 +0000">'
+            b'<title>Ancient</title></programme>'
+            b'<channel id="abc-short"><display-name>ABC News Live</display-name></channel>'
+            b'<programme channel="abc-short" start="20261012020000 +0000" stop="20261012030000 +0000">'
+            b'<title>Brief</title></programme>'
+            b'<channel id="kets"><display-name>PBS (KETS) Arkansas HD.us</display-name></channel>'
+            b'<programme channel="kets" start="20261012040000 +0000" stop="20261012050000 +0000">'
+            b'<title>NewsHour</title></programme>'
+            b'<channel id="wmpt"><display-name>PBS (WMPT) Annapolis, MD HD.us</display-name></channel>'
+            b'<programme channel="wmpt" start="20261012040000 +0000" stop="20261012050000 +0000">'
+            b'<title>Annapolis</title></programme>'
+            b'<channel id="awe-plus"><display-name>AWE Plus</display-name></channel>'
+            b'<programme channel="awe-plus" start="20261012020000 +0000" stop="20261012030000 +0000">'
+            b'<title>Wild Roads</title></programme>'
+            b'<channel id="boston"><display-name>Boston</display-name></channel>'
+            b'<programme channel="boston" start="20261012020000 +0000" stop="20261012030000 +0000">'
+            b'<title>Wrong City</title></programme>'
+            b'<channel id="tie-a"><display-name>Fuel TV</display-name></channel>'
+            b'<programme channel="tie-a" start="20261012020000 +0000" stop="20261012030000 +0000">'
+            b'<title>Left</title></programme>'
+            b'<channel id="tie-b"><display-name>Fuel TV HD</display-name></channel>'
+            b'<programme channel="tie-b" start="20261012020000 +0000" stop="20261012030000 +0000">'
+            b'<title>Right</title></programme></tv>'
+        )
+        result = gather.finish_lineup(entries, [], house, "http://192.168.1.120:8877",
+                                      probe=lambda url: {"bandwidth": 0, "height": 0},
+                                      name_guides=[donor])
+        guide = result["epg"].decode()
+        self.assertIn('channel="earth-copy"', guide)
+        self.assertEqual(guide.count(">Planet<"), 2)
+        self.assertEqual(guide.count(">World News<"), 1)
+        self.assertIn('channel="abc-copy"', guide)
+        self.assertNotIn('programme channel="news-copy"', guide)
+        self.assertNotIn('programme channel="boston-copy"', guide)
+        self.assertNotIn('programme channel="fuel-copy"', guide)
+        self.assertNotIn("Wild Roads", guide)
+        self.assertNotIn("Wrong City", guide)
+        self.assertNotIn(">Left<", guide)
+        self.assertNotIn(">Right<", guide)
+        self.assertIn('channel="PBS.us@KETS"', guide)
+        self.assertIn("NewsHour", guide)
+        self.assertNotIn("Ancient", guide)
+        self.assertNotIn("Brief", guide)
+        self.assertNotIn("Annapolis", guide)
+        again, copied = gather.copy_listings_by_name(result["epg_source"], entries, [donor])
+        self.assertEqual(copied, 0)
+        self.assertEqual(again.count(b"Planet"), result["epg_source"].count(b"Planet"))
+        seen = []
+
+        def fetch(url, limit):
+            seen.append(url)
+            raise ValueError("missing")
+
+        with patch.object(gather, "EPG_LIMIT", 20 * 1024 * 1024):
+            self.assertEqual(gather.extra_name_guides(fetch), [])
+        self.assertEqual(seen, [])
+        with patch.object(gather, "EPG_LIMIT", 64 * 1024 * 1024):
+            self.assertEqual(gather.extra_name_guides(fetch), [])
+        self.assertEqual(len(seen), len(gather.NAME_GUIDE_SOURCES))
+
+    def test_every_active_channel_is_packed_under_the_plex_limit(self):
+        sys.path.insert(0, str(Path(__file__).parents[1] / "server"))
+        import gather
+        entries = []
+        for index in range(500):
+            entries.append({
+                "name": "Station %03d" % index, "url": "https://example.test/station/%03d" % index,
+                "tvg_id": "station-%03d" % index, "logo": "", "group": "Pack", "source": "Plex", "lean": False,
+            })
+        result = gather.finish_lineup(entries, [], b"<tv></tv>", "http://192.168.1.120:8877",
+                                      probe=lambda url: {"bandwidth": 0, "height": 0})
+        self.assertEqual(result["active"], 500)
+        self.assertEqual(result["inactive"], 0)
+        self.assertGreaterEqual(len(result["tuners"]), 2)
+        covered = []
+        for tuner in result["tuners"]:
+            self.assertLessEqual(tuner["playlist"].count("#EXTINF"), 450)
+            self.assertGreater(tuner["playlist"].count("#EXTINF"), 0)
+            covered.append(tuner["playlist"])
+            self.assertIn("<channel ", tuner["guide"].decode())
+        blob = "\n".join(covered)
+        for index in range(500):
+            self.assertIn("https://example.test/station/%03d" % index, blob)
+        self.assertNotIn("example.test", json.dumps(result["lineup"]))
+
+    def test_portal_lineup_strips_stream_addresses(self):
+        cleaned = server.scrub_public({
+            "name": "News", "url": "https://example.test/a?token=private",
+            "programmes": [{"title": "Evening"}],
+        })
+        self.assertEqual(cleaned["programmes"][0]["title"], "Evening")
+        self.assertNotIn("url", cleaned)
+        self.assertNotIn("example.test", json.dumps(cleaned))
+        self.assertNotIn("private", json.dumps(cleaned))
 
     def test_changing_skin_does_not_reuse_previous_skin_settings(self):
         initial = server.client_profile()

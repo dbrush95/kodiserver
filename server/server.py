@@ -472,7 +472,63 @@ def publish_playlist(args):
     # Counts and local URLs only. Stream addresses stay in the hosted files.
     return catalog()
 
+def serve_only():
+    """The Pi serves a copy. Building the guide there would fill its memory."""
+    paths = [Path("/etc/systemd/system/kodiserver-playlist.service")]
+    drop = Path("/etc/systemd/system/kodiserver-playlist.service.d")
+    if drop.is_dir():
+        paths.extend(sorted(drop.glob("*.conf")))
+    for path in paths:
+        try:
+            if "KODISERVER_SERVE_ONLY=1" in path.read_text(errors="replace"):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def scrub_public(value):
+    """Drop anything that could carry a stream address into the portal."""
+    if isinstance(value, dict):
+        return {key: scrub_public(item) for key, item in value.items()
+                if key not in {"url", "stream", "file", "logo"}}
+    if isinstance(value, list):
+        return [scrub_public(item) for item in value]
+    if isinstance(value, str) and ("://" in value or "token=" in value.lower()):
+        return ""
+    return value
+
+
+def lineup_status():
+    url = os.environ.get("KODISERVER_LINEUP_URL", "http://192.168.1.120:8877/lineup.json")
+    request = urllib.request.Request(url, headers={"User-Agent": "kodiserver"})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        data = json.loads(response.read(2 * 1024 * 1024))
+    if not isinstance(data, dict):
+        raise ValueError("Lineup was unreadable")
+    return scrub_public(data)
+
+
+def lineup_decide(args):
+    key = str(args.get("key") or "")
+    if not re.fullmatch(r"[0-9a-f]{16}", key):
+        raise ValueError("Unknown channel")
+    url = os.environ.get("KODISERVER_LINEUP_DECIDE", "http://192.168.1.120:8877/lineup/decide")
+    payload = json.dumps({"key": key, "active": bool(args.get("active"))}).encode()
+    request = urllib.request.Request(url, data=payload, headers={
+        "Content-Type": "application/json", "User-Agent": "kodiserver"})
+    with urllib.request.urlopen(request, timeout=90) as response:
+        data = json.loads(response.read(2 * 1024 * 1024))
+    if isinstance(data, dict) and data.get("error"):
+        raise ValueError(str(data["error"])[:180])
+    if not isinstance(data, dict):
+        raise ValueError("Lineup was unreadable")
+    return scrub_public(data)
+
+
 def publish_house(args):
+    if serve_only():
+        raise ValueError("The big PC builds this playlist. This Pi only keeps a copy.")
     import gather
     merge_text = ""
     merge_epg = b""
@@ -487,19 +543,17 @@ def publish_house(args):
                 and epg_path.stat().st_size <= 250 * 1024 * 1024):
             merge_epg = epg_path
     payload = gather.build_house(merge_text, merge_epg, playlist_base())
-    folder = public_root()
-    atomic_write(folder / "playlist.m3u8", payload["playlist"].encode())
-    atomic_write(folder / "tvh.m3u8", payload["tvh"].encode())
-    atomic_write(folder / "kodi.m3u8", payload["kodi"].encode())
-    atomic_write(folder / "epg.xml", payload["epg"])
+    gather.store_house(payload)
     meta = {
         "total": payload["total"], "direct_candidates": payload["direct_candidates"],
         "kodi_dependent": payload["kodi_dependent"], "other": 0, "lean": payload["lean"],
+        "active": payload["active"], "inactive": payload["inactive"],
+        "tuners": payload["lineup"]["tuners"],
         "epg": payload["guide_channels"] > 0,
         "published": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "sources": payload["sources"],
     }
-    atomic_write(folder / "catalog.json", json.dumps(meta).encode())
+    atomic_write(public_root() / "catalog.json", json.dumps(meta).encode())
     return catalog()
 
 WEATHER_TEXT = {
@@ -798,7 +852,8 @@ def main():
                     "services": lambda: services(), "profile": lambda: client_profile(),
                     "save-profile": lambda: save_profile(args), "capture-profile": lambda: capture_profile(args),
                     "analyze-playlist": lambda: analyze_playlist(args), "publish-playlist": lambda: publish_playlist(args),
-                    "publish-house": lambda: publish_house(args), "catalog": lambda: catalog()}
+                    "publish-house": lambda: publish_house(args), "catalog": lambda: catalog(),
+                    "lineup": lambda: lineup_status(), "lineup-decide": lambda: lineup_decide(args)}
         if action not in handlers:
             raise ValueError("Unknown action")
         print(json.dumps(handlers[action]()))
