@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kodi Server • Home media</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=4">
 <script src="../base1/cockpit.js"></script>
-<script src="app.js" defer></script>
+<script src="app.js?v=4" defer></script>
 </head>
 <body>
 <div class="layout">
@@ -14,6 +14,7 @@
 <nav aria-label="Portal sections">
 <button data-page="overview" aria-current="page">◫ <span>Overview</span></button>
 <button data-page="backups">▣ <span>Kodi backups</span></button>
+<button data-page="files">▦ <span>Files</span></button>
 <button data-page="tv">▤ <span>IPTV & DVR</span></button>
 <button data-page="clients">⇄ <span>Devices & profile</span></button>
 <button data-page="plex">▷ <span>Plex portal</span></button>
@@ -37,6 +38,7 @@
 <div class="cards">
 <article class="service"><span class="service-icon amber">▷</span><span class="tag" id="tv-tag">Checking…</span><h3>IPTV & DVR</h3><p>One channel guide and recording backend for your Kodi clients.</p><button data-go="tv" class="secondary">Manage live TV →</button></article>
 <article class="service"><span class="service-icon mint">▣</span><span class="tag">Recovery</span><h3>Kodi backups</h3><p>Import your Shield backup and keep dated recovery copies.</p><button data-go="backups" class="secondary">Manage backups →</button></article>
+<article class="service"><span class="service-icon blue">▤</span><span class="tag">Pi account</span><h3>Files</h3><p>Browse server files, the Shield USB, recordings, and your home folder.</p><button data-go="files" class="secondary">Open files →</button></article>
 <article class="service"><span class="service-icon blue">›_</span><span class="tag">Pi account</span><h3>Server terminal</h3><p>A real shell on your Raspberry Pi, right here in your browser.</p><button data-go="terminal" class="secondary">Open terminal →</button></article>
 </div>
 <div class="note"><strong>One shared profile.</strong> Publish a tested skin, weather preferences, and repository schedule under Devices & profile. New devices use the companion add-on to follow it.</div>
@@ -75,6 +77,21 @@
 <div class="panel"><h2>Metadata & faster startup</h2><p>Tvheadend owns the supported channels, EPG and recordings. An optional MariaDB library shares Kodi’s native movie/show metadata and watched status; it does not share streaming add-on catalogs.</p><p>Run <code>bash setup-server.sh library</code> to prepare MariaDB. After installing the companion, use its shared-library setup. Keep all clients on the same Kodi version and media sources reachable at identical network paths.</p><p>Use one companion’s “Scan shared library” option for periodic scans. Configure that client’s media sources first. Kodi still performs the scans; MariaDB stores the results on the Pi. Do not expect the Pi database to scrape your media by itself.</p><p>Keep artwork caches on each client. Reduce startup widgets, disable unused add-on services, and measure startup before/after. Central storage cannot remove local add-on authentication or widget work.</p></div>
 </section>
 <section id="plex" class="page" hidden><article class="panel"><h2>Plex portal</h2><p>Plex setup is deferred. Your existing server remains separate; this space is reserved for a portal shortcut when you want it.</p></article></section>
+<section id="files" class="page" hidden>
+<p class="intro">Browse the folders this Pi already uses. Larger copies still belong on the network shares.</p>
+<div class="places" id="file-places"></div>
+<div class="file-toolbar">
+<button type="button" id="file-up" class="secondary" disabled>Up</button>
+<form id="file-folder-form"><input id="file-folder-name" placeholder="New folder name" maxlength="240" aria-label="New folder name"><button type="submit">New folder</button></form>
+<button type="button" id="file-upload-button" class="secondary">Upload</button>
+<input id="file-upload" type="file" hidden>
+</div>
+<p id="file-path" class="file-path"></p>
+<div id="file-list" class="file-list"><p>Loading files…</p></div>
+<p id="file-note" class="hint"></p>
+<pre id="file-preview" hidden></pre>
+<div class="note">Private keys and the library password file stay hidden. Deleting a backup here removes the Pi’s copy. A USB original is left in place. Uploads are limited to 8 MB.</div>
+</section>
 <section id="terminal" class="page" hidden><p class="intro">Signed in as your Pi user. Commands run on the Raspberry Pi.</p><div id="terminal-slot" class="terminal-slot"><p>The terminal loads when this section opens.</p></div></section>
 <section id="guide" class="page" hidden>
 <div class="panel guide">

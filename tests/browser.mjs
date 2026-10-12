@@ -13,6 +13,9 @@ try {
       if(action==="profile")return JSON.stringify(shared);
       if(action==="save-profile"){shared={...shared,...payload};return JSON.stringify(shared);}
       if(action==="services")return JSON.stringify({clients:"/home/test/.local/share/kodiserver/clients",smbd:"active",tvheadend:"active",mariadb:"inactive"});
+      if(action==="catalog")return JSON.stringify({published:"",direct_candidates:0,lean:0,epg:false,host:"inactive",apple_playlist:"",kodi_playlist:"",tvh_playlist:"",epg_url:"",files:[],sources:[],weather:{}});
+      if(action==="files")return JSON.stringify({path:payload.path||"/home/test/server",parent:payload.path?"/home/test/server":null,places:[{id:"server",label:"Server files",path:"/home/test/server"},{id:"home",label:"Home",path:"/home/test"}],entries:payload.path&&payload.path.endsWith("/clips")?[{name:"note.txt",kind:"file",size:12,modified:"2026-10-12T00:00:00+00:00"}]:[{name:"clips",kind:"dir",size:null,modified:"2026-10-12T00:00:00+00:00"}],truncated:false});
+      if(action==="file-read")return JSON.stringify({name:payload.name,text:"hello from the pi"});
       if(action==="analyze-playlist")return JSON.stringify({total:3,direct_candidates:1,kodi_dependent:2,other:0});
       if(action==="import")throw new Error("Fixture import failure");
       throw new Error(action);
@@ -29,9 +32,15 @@ try {
   await page.getByRole("button",{name:"Publish profile",exact:true}).click();
   await page.waitForFunction(()=>document.getElementById("notice").textContent.includes("published"));
   assert.equal(await page.locator("#weather-location").inputValue(),"Example city");
+  await page.locator('[data-page="files"]').click();
+  await page.waitForFunction(()=>document.getElementById("file-path").textContent.includes("/home/test"));
+  await page.getByRole("button",{name:"clips",exact:true}).click();
+  await page.waitForFunction(()=>document.getElementById("file-path").textContent.endsWith("/clips"));
+  await page.getByRole("button",{name:"Preview",exact:true}).click();
+  await page.waitForFunction(()=>document.getElementById("file-preview").textContent.includes("hello from the pi"));
   await page.locator('[data-page="tv"]').click();
   await page.locator("#playlist-path").fill("/media/test/playlist.m3u8");
-  await page.getByRole("button",{name:"Inspect playlist"}).click();
+  await page.getByRole("button",{name:"Inspect",exact:true}).click();
   await page.waitForFunction(()=>document.getElementById("playlist-result").textContent.includes("3 entries"));
   assert.equal(await page.locator("#tv-open").getAttribute("href"),"http://127.0.0.1:9981/");
   await page.locator('[data-page="backups"]').click();
@@ -46,6 +55,10 @@ try {
   await page.setViewportSize({width:390,height:844});
   await page.screenshot({path:"test-results/overview-mobile.png",fullPage:true});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,"mobile overflow");
+  await page.locator('[data-page="files"]').click();
+  await page.waitForFunction(()=>document.getElementById("file-path").textContent.includes("/home/test"));
+  await page.screenshot({path:"test-results/files-mobile.png",fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,"files mobile overflow");
   assert.deepEqual(errors,[]);
   console.log("Browser fixture checks passed. Real Cockpit, TV backend and companion still require device validation.");
 } finally { await browser.close(); }

@@ -42,6 +42,9 @@ Disney+, Hulu, ESPN, Paramount+, Philo, Max, and Hulu Live stay in the SlyGuy ad
 
 A Shield USB stick labeled `ESD-USB` can be mounted at `/mnt/shield-usb`. The portal lists a dated Kodi Backup folder there, and the playlist service copies it into the recovery library after the folder stops changing. The stick’s Android data is not imported. The Shield’s IPTV Merge `playlist.m3u8` and `epg.xml`, when present in that backup, are seeded into KodiPlaylists. Later saves should go straight to that share.
 
+## File manager
+The portal’s **Files** page browses Server files, your home folder, a mounted Shield USB stick, and Tvheadend recordings when that folder is readable. It can create folders, rename, delete, preview small text files, and upload files up to 8 MB. Private keys and `library.xml` are not previewed. Copy larger media through the SMB shares.
+
 ## Shared storage
 All data stays outside Git, under `~/.local/share/kodiserver`, private to the Pi user.
 

@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const titles = {overview:"Your media, at home.",backups:"A safe home for your setup.",plex:"Plex, when you’re ready.",tv:"Live TV, from one place.",clients:"The same home on every screen.",terminal:"Your Pi. Your command.",guide:"Set up once. Keep it safe."};
+const titles = {overview:"Your media, at home.",backups:"A safe home for your setup.",files:"Files on this Pi.",plex:"Plex, when you’re ready.",tv:"Live TV, from one place.",clients:"The same home on every screen.",terminal:"Your Pi. Your command.",guide:"Set up once. Keep it safe."};
 function notice(message) { $("notice").textContent=message; $("notice").hidden=!message; }
 function bytes(n) { if(!Number.isFinite(n)) return "—"; return n>=1073741824 ? (n/1073741824).toFixed(1)+" GB" : Math.round(n/1048576)+" MB"; }
 async function api(action, args={}) {
@@ -17,6 +17,84 @@ function show(page) {
     const frame=document.createElement("iframe"); frame.title="Raspberry Pi terminal";
     frame.src="/cockpit/@localhost/system/terminal.html"; $("terminal-slot").replaceChildren(frame);
   } else if(page==="terminal" && !window.cockpit) $("terminal-slot").textContent="The real terminal is available after installing on your Pi and signing in to Cockpit.";
+  if(page==="files") loadFiles($("file-path").dataset.path||"");
+}
+function fileSize(n) {
+  if(!Number.isFinite(n)) return "—";
+  if(n<1024) return n+" B";
+  if(n<1048576) return Math.max(1,Math.round(n/1024))+" KB";
+  return bytes(n);
+}
+let filesLoading=false;
+async function loadFiles(path) {
+  if(filesLoading) return;
+  filesLoading=true;
+  const list=$("file-list");
+  $("file-preview").hidden=true;
+  try {
+    const data=await api("files",path?{path}: {});
+    $("file-path").dataset.path=data.path;
+    $("file-path").textContent=data.path;
+    $("file-up").disabled=!data.parent;
+    $("file-up").dataset.path=data.parent||"";
+    const places=$("file-places"); places.replaceChildren();
+    for(const place of data.places||[]) {
+      const button=document.createElement("button");
+      button.type="button"; button.className="secondary"; button.textContent=place.label;
+      button.addEventListener("click",()=>loadFiles(place.path));
+      places.append(button);
+    }
+    list.replaceChildren();
+    if(!(data.entries||[]).length) {
+      const empty=document.createElement("p"); empty.className="empty"; empty.textContent="This folder is empty."; list.append(empty);
+    }
+    for(const entry of data.entries||[]) {
+      const row=document.createElement("article"); row.className="file-row";
+      const name=document.createElement("button"); name.type="button"; name.className="file-name"; name.textContent=entry.name;
+      if(entry.kind==="dir") name.addEventListener("click",()=>loadFiles(data.path.replace(/\/$/,"")+"/"+entry.name));
+      else name.disabled=entry.kind!=="file";
+      const meta=document.createElement("p");
+      const when=entry.modified?new Date(entry.modified).toLocaleString():"";
+      meta.textContent=(entry.kind==="dir"?"Folder":entry.kind==="link"?"Link":"File")+" · "+(entry.kind==="file"?fileSize(entry.size):"—")+(when?" · "+when:"");
+      const actions=document.createElement("div"); actions.className="file-actions";
+      if(entry.kind==="file") {
+        const preview=document.createElement("button"); preview.type="button"; preview.className="secondary"; preview.textContent="Preview";
+        preview.addEventListener("click",()=>previewFile(data.path,entry.name));
+        actions.append(preview);
+      }
+      if(entry.kind==="file"||entry.kind==="dir") {
+        const rename=document.createElement("button"); rename.type="button"; rename.className="secondary"; rename.textContent="Rename";
+        rename.addEventListener("click",()=>renameEntry(data.path,entry));
+        const remove=document.createElement("button"); remove.type="button"; remove.className="secondary"; remove.textContent="Delete";
+        remove.addEventListener("click",()=>deleteEntry(data.path,entry));
+        actions.append(rename,remove);
+      }
+      row.append(name,meta,actions); list.append(row);
+    }
+    $("file-note").textContent=data.truncated?"This folder has more than 2,000 entries. The first 2,000 are shown.":"";
+  } catch(error) { notice(error.message||String(error)); list.replaceChildren(); }
+  finally { filesLoading=false; }
+}
+async function previewFile(path,name) {
+  notice(""); $("file-preview").hidden=false; $("file-preview").textContent="Loading…";
+  try {
+    const result=await api("file-read",{path,name});
+    $("file-preview").textContent=result.text;
+  } catch(error) { $("file-preview").hidden=true; notice(error.message||String(error)); }
+}
+async function renameEntry(path,entry) {
+  const next=prompt("New name",entry.name);
+  if(!next||next===entry.name) return;
+  notice("");
+  try { await api("file-rename",{path,name:entry.name,to:next}); await loadFiles(path); notice("Renamed."); }
+  catch(error) { notice(error.message||String(error)); }
+}
+async function deleteEntry(path,entry) {
+  const warning=entry.kind==="dir"?"Delete the folder "+entry.name+" and everything inside it? This cannot be undone.":"Delete "+entry.name+"? This cannot be undone.";
+  if(!confirm(warning)) return;
+  notice("");
+  try { await api("file-delete",{path,name:entry.name}); $("file-preview").hidden=true; await loadFiles(path); notice("Deleted."); }
+  catch(error) { notice(error.message||String(error)); }
 }
 function renderBackups(data) {
   $("backup-location").textContent=data.path;
@@ -95,6 +173,7 @@ async function refresh() {
     $("memory-detail").textContent=bytes(status.memory_used)+" of "+bytes(status.memory_total);
     $("disk").textContent=bytes(status.disk_free); $("disk-detail").textContent=bytes(status.disk_total)+" total";
     $("backup-count").textContent=backups.items.length;renderBackups(backups);renderProfile(profile,backups,services);renderCatalog(catalogData);
+    if(!$("files").hidden) await loadFiles($("file-path").dataset.path||"");
   } catch(error) { notice(error.message||String(error)); }
   finally { refreshing=false;$("refresh").disabled=false; }
 }
@@ -128,4 +207,27 @@ $("import-form").addEventListener("submit",async event=>{
   try{await api("import",{path:$("backup-path").value.trim(),label:$("backup-label").value.trim()});$("import-form").reset();await refresh();notice("Recovery copy imported. Your USB original is unchanged.");}
   catch(error){notice(error.message||String(error));}finally{button.disabled=false;button.textContent="Import backup";}
 });
+$("file-up").addEventListener("click",()=>{ if($("file-up").dataset.path) loadFiles($("file-up").dataset.path); });
+$("file-folder-form").addEventListener("submit",async event=>{
+  event.preventDefault(); const name=$("file-folder-name").value.trim(); if(!name) return;
+  const button=event.submitter; button.disabled=true; notice("");
+  try { await api("file-mkdir",{path:$("file-path").dataset.path,name}); $("file-folder-name").value=""; await loadFiles($("file-path").dataset.path); notice("Folder created."); }
+  catch(error){ notice(error.message||String(error)); }
+  finally { button.disabled=false; }
+});
+$("file-upload").addEventListener("change",async event=>{
+  const file=event.target.files&&event.target.files[0]; event.target.value="";
+  if(!file||!window.cockpit) return;
+  if(file.size>8*1024*1024){ notice("Files larger than 8 MB belong on a network share."); return; }
+  notice(""); const button=$("file-upload-button"); button.disabled=true; button.textContent="Uploading…";
+  try {
+    const proc=cockpit.spawn(["/usr/bin/python3","/usr/local/lib/kodiserver/server.py","file-write",JSON.stringify({path:$("file-path").dataset.path,name:file.name})],{superuser:"none",err:"message"});
+    proc.input(new Uint8Array(await file.arrayBuffer()));
+    const output=await proc; const result=JSON.parse(output);
+    if(result.error) throw new Error(result.error);
+    await loadFiles($("file-path").dataset.path); notice("Uploaded "+file.name+".");
+  } catch(error){ notice(error.message||String(error)); }
+  finally { button.disabled=false; button.textContent="Upload"; }
+});
+$("file-upload-button").addEventListener("click",()=>$("file-upload").click());
 show(location.hash.slice(1));refresh();

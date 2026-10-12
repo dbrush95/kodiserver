@@ -4,3 +4,17 @@
 @media(max-width:650px){.layout{display:block}.sidebar{padding:16px;border-right:0;border-bottom:1px solid var(--line)}nav{display:flex;overflow:auto;margin-top:18px;gap:5px}nav button{white-space:nowrap;padding:9px}nav button span{margin-left:5px}.sidebar-foot{display:none}main{padding:20px}h1{font-size:25px}header{gap:12px}.hero{grid-template-columns:1fr;padding:24px}.server-art{display:none}.hero h2{font-size:30px}.metrics{gap:10px}.metrics article{padding:14px}.metrics strong{font-size:22px}.section-heading{align-items:flex-start;flex-direction:column;margin-bottom:15px}.section-heading h2{margin-bottom:0}footer{gap:15px}}
 
 select{width:100%;background:#0d151a;border:1px solid #40515c;border-radius:7px;color:var(--ink);padding:12px;font:inherit}.page>.panel{margin-top:22px}.repo-item{padding:10px 0;border-bottom:1px solid var(--line)}
+.places{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}.places button,.file-toolbar button{margin-top:0}
+.file-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.file-toolbar form{display:flex;flex-wrap:nowrap;gap:10px;align-items:center;margin:0}
+.file-toolbar input{width:min(280px,100%);margin:0}
+.file-path{overflow-wrap:anywhere;font-size:12px}
+.file-list{display:grid;gap:8px}
+.file-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:8px 14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.file-name{background:none;border:0;color:var(--ink);padding:0;text-align:left;font-weight:650;overflow-wrap:anywhere}
+.file-name:disabled{color:var(--muted);cursor:default}
+.file-row p{margin:0;font-size:12px}
+.file-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.file-actions button{margin:0;padding:7px 10px}
+#file-preview{white-space:pre-wrap;overflow:auto;max-height:360px;background:#0d151a;border-radius:8px;padding:14px;margin-top:14px}
+@media(max-width:650px){.file-row{grid-template-columns:1fr}.file-actions{justify-content:flex-start}}

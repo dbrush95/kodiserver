@@ -603,12 +603,196 @@ def service_state(name):
     except (OSError, subprocess.TimeoutExpired):
         return "unavailable"
 
+FILE_LIST_LIMIT = 2000
+FILE_PREVIEW_LIMIT = 64 * 1024
+FILE_UPLOAD_LIMIT = 8 * 1024 * 1024
+HIDDEN_NAMES = {"library.xml", "id_rsa", "id_ed25519", "id_ecdsa", "authorized_keys"}
+
+def file_places():
+    """Folders the portal may browse. Other system paths stay out."""
+    places = [
+        {"id": "server", "label": "Server files", "path": str(root())},
+        {"id": "home", "label": "Home", "path": str(Path.home())},
+    ]
+    for label, candidate in (
+        ("Shield USB", Path("/mnt/shield-usb")),
+        ("Media", Path("/media")),
+        ("Removable", Path("/run/media")),
+        ("Recordings", Path("/var/lib/tvheadend/recordings")),
+    ):
+        if candidate.is_dir() and not candidate.is_symlink():
+            places.append({"id": label.lower().replace(" ", "-"), "label": label, "path": str(candidate)})
+    return places
+
+def file_roots():
+    return [Path(place["path"]).resolve() for place in file_places()]
+
+def clean_name(name):
+    if not isinstance(name, str) or name in ("", ".", "..") or "/" in name or "\\" in name or "\x00" in name:
+        raise ValueError("Use a file name without slashes")
+    if len(name) > 240:
+        raise ValueError("That name is too long")
+    return name
+
+def resolve_inside(raw):
+    if not isinstance(raw, str) or not raw or len(raw) > 4096:
+        raise ValueError("Choose a folder on this Pi")
+    path = Path(raw)
+    if not path.is_absolute():
+        raise ValueError("Choose a folder on this Pi")
+    if path.is_symlink():
+        raise ValueError("Symbolic links are not opened")
+    resolved = path.resolve()
+    if not any(resolved == base or base in resolved.parents for base in file_roots()):
+        raise ValueError("That folder is outside the file manager")
+    return resolved
+
+def is_protected(path):
+    home = Path.home().resolve()
+    data = root().resolve()
+    ssh = home / ".ssh"
+    if path in (home, data, data / "backups", data / "public", data / "inbox", data / "clients", data / "cache"):
+        return True
+    return path == ssh or ssh in path.parents
+
+def hidden_file(path):
+    return path.name.lower() in HIDDEN_NAMES or path.suffix.lower() in {".pem", ".key"} or is_protected(path)
+
+def list_files(args):
+    places = file_places()
+    folder = resolve_inside(args.get("path") or places[0]["path"])
+    if not folder.is_dir():
+        raise ValueError("Choose a folder")
+    entries = []
+    truncated = False
+    for child in folder.iterdir():
+        if len(entries) >= FILE_LIST_LIMIT:
+            truncated = True
+            break
+        if child.is_symlink():
+            kind = "link"
+        elif child.is_dir():
+            kind = "dir"
+        elif child.is_file():
+            kind = "file"
+        else:
+            kind = "other"
+        try:
+            stat_result = child.lstat()
+            modified = datetime.datetime.fromtimestamp(stat_result.st_mtime, datetime.timezone.utc).isoformat()
+            size = stat_result.st_size if kind == "file" else None
+        except OSError:
+            modified = ""
+            size = None
+        entries.append({"name": child.name, "kind": kind, "size": size, "modified": modified})
+    entries.sort(key=lambda item: (item["kind"] != "dir", item["name"].lower()))
+    parent = None
+    if folder.parent != folder:
+        try:
+            parent = str(resolve_inside(str(folder.parent)))
+        except ValueError:
+            parent = None
+    return {"path": str(folder), "parent": parent, "places": places, "entries": entries, "truncated": truncated}
+
+def open_child(args):
+    folder = resolve_inside(args.get("path", ""))
+    if not folder.is_dir():
+        raise ValueError("Choose a folder")
+    child = folder / clean_name(args.get("name", ""))
+    if child.is_symlink():
+        raise ValueError("Symbolic links are not opened")
+    if not any(child.resolve() == base or base in child.resolve().parents for base in file_roots()):
+        raise ValueError("That file is outside the file manager")
+    return folder, child
+
+def read_file_preview(args):
+    _folder, child = open_child(args)
+    if not child.is_file():
+        raise ValueError("Choose a file")
+    if hidden_file(child):
+        raise ValueError("This file stays hidden")
+    if child.stat().st_size > FILE_PREVIEW_LIMIT:
+        raise ValueError("This file is too large to preview")
+    data = child.read_bytes()
+    if b"\x00" in data:
+        raise ValueError("This file is not text")
+    return {"name": child.name, "text": data.decode("utf-8", "replace")}
+
+def make_directory(args):
+    folder = resolve_inside(args.get("path", ""))
+    child = folder / clean_name(args.get("name", ""))
+    if child.exists() or child.is_symlink():
+        raise ValueError("That name already exists")
+    child.mkdir()
+    return list_files({"path": str(folder)})
+
+def rename_path(args):
+    folder, child = open_child(args)
+    if not child.exists():
+        raise ValueError("That file is not there")
+    if is_protected(child):
+        raise ValueError("That folder is part of the server and stays put")
+    target = folder / clean_name(args.get("to", ""))
+    if target.exists() or target.is_symlink():
+        raise ValueError("That name already exists")
+    child.rename(target)
+    return list_files({"path": str(folder)})
+
+def contains_link(folder):
+    for directory, dirnames, names in os.walk(folder, followlinks=False):
+        for name in dirnames + names:
+            if (Path(directory) / name).is_symlink():
+                return True
+    return False
+
+def delete_path(args):
+    folder, child = open_child(args)
+    if not child.exists():
+        raise ValueError("That file is not there")
+    if is_protected(child):
+        raise ValueError("That folder is part of the server and stays put")
+    if child.is_dir():
+        if contains_link(child):
+            raise ValueError("This folder contains a symbolic link, so it was left in place")
+        shutil.rmtree(child)
+    elif child.is_file():
+        child.unlink()
+    else:
+        raise ValueError("Choose a file or folder")
+    return list_files({"path": str(folder)})
+
+def write_uploaded_file(args, blob):
+    if len(blob) > FILE_UPLOAD_LIMIT:
+        raise ValueError("Files larger than 8 MB belong on a network share")
+    folder = resolve_inside(args.get("path", ""))
+    name = clean_name(args.get("name", ""))
+    if name.lower() in HIDDEN_NAMES or Path(name).suffix.lower() in {".pem", ".key"}:
+        raise ValueError("That file name is reserved")
+    child = folder / name
+    if child.exists() or child.is_symlink():
+        raise ValueError("That name already exists")
+    temporary = folder / (".upload-" + uuid.uuid4().hex)
+    try:
+        temporary.write_bytes(blob)
+        temporary.replace(child)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return list_files({"path": str(folder)})
+
 def main():
     os.umask(0o077)
     try:
         action = sys.argv[1]
         args = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+        if action == "file-write":
+            blob = sys.stdin.buffer.read(FILE_UPLOAD_LIMIT + 1)
+            print(json.dumps(write_uploaded_file(args, blob)))
+            return 0
         handlers = {"status": lambda: status(), "backups": lambda: inventory(),
+                    "files": lambda: list_files(args), "file-read": lambda: read_file_preview(args),
+                    "file-mkdir": lambda: make_directory(args), "file-rename": lambda: rename_path(args),
+                    "file-delete": lambda: delete_path(args),
                     "settings": lambda: settings(), "save-settings": lambda: save_settings(args),
                     "import": lambda: import_backup(args), "check-plex": lambda: check_plex(),
                     "services": lambda: services(), "profile": lambda: client_profile(),

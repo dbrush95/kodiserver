@@ -183,5 +183,35 @@ class ServerTests(unittest.TestCase):
     def test_status_returns_real_storage(self):
         self.assertGreater(server.status()["disk_total"], 0)
 
+    def test_file_manager_stays_inside_allowed_folders(self):
+        folder = self.home / "clips"
+        folder.mkdir()
+        (folder / "note.txt").write_text("hello")
+        listed = server.list_files({"path": str(self.home)})
+        self.assertIn("clips", [item["name"] for item in listed["entries"]])
+        self.assertEqual(server.read_file_preview({"path": str(folder), "name": "note.txt"})["text"], "hello")
+        created = server.make_directory({"path": str(folder), "name": "extra"})
+        self.assertIn("extra", [item["name"] for item in created["entries"]])
+        renamed = server.rename_path({"path": str(folder), "name": "note.txt", "to": "done.txt"})
+        self.assertIn("done.txt", [item["name"] for item in renamed["entries"]])
+        uploaded = server.write_uploaded_file({"path": str(folder), "name": "clip.txt"}, b"clip")
+        self.assertIn("clip.txt", [item["name"] for item in uploaded["entries"]])
+        removed = server.delete_path({"path": str(folder), "name": "done.txt"})
+        self.assertNotIn("done.txt", [item["name"] for item in removed["entries"]])
+        outside = Path("C:/Windows") if sys.platform.startswith("win") else Path("/etc")
+        with self.assertRaises(ValueError):
+            server.list_files({"path": str(outside)})
+        with self.assertRaises(ValueError):
+            server.delete_path({"path": str(self.home), "name": "."})
+        with self.assertRaises(ValueError):
+            server.delete_path({"path": str(server.root().parent), "name": server.root().name})
+        secret = server.root() / "clients"
+        secret.mkdir(exist_ok=True)
+        (secret / "library.xml").write_text("<settings/>")
+        with self.assertRaises(ValueError):
+            server.read_file_preview({"path": str(secret), "name": "library.xml"})
+        with self.assertRaises(ValueError):
+            server.write_uploaded_file({"path": str(folder), "name": "big.bin"}, b"x" * (8 * 1024 * 1024 + 1))
+
 if __name__ == "__main__":
     unittest.main()
